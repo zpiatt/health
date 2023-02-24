@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+
+# Health: A command-line Red-Hat quick status check tool written in bash 3.2+.
+# https://github.com/zpiatt/health
+#
+# Copyright (C) 2023 Zac Piatt
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+version="Health version: 1.0.0 - February 23, 2023"
+
+usage() {
+	cat <<-EOF
+	Usage: health [OPTION]... [DIRECTORY]...
+
+	  -d,   display colorized file system disk space usage
+	  -i,   display colorized file systems inodes usage
+	  -p,   perform common file permission checks
+	  -f,   report 10 largest files in directory tree
+	  -m,   compare mounts to /etc/fstab
+	  -v,   display version number and exit
+	  -h,   display this help and exit
+
+	Full documentation <https://github.com/zpiatt/health>.
+	${version}
+	EOF
+	return
+}
+
+health() {
+	printf "%bHostname:%b " "$blue" "$reset"; hostname
+	printf "%bOS Version:%b " "$blue" "$reset"; grep -Po "(?<=PRETTY_NAME=\").*[^\"]" /etc/os-release
+	printf "%bKernel Version:%b " "$blue" "$reset"; uname -r
+	printf "%bUptime:%b " "$blue" "$reset"; uptime
+	printf "%bUsers Currently Logged in:%b\n" "$blue" "$reset"; who -u
+	printf "%bMemory Usage:%b\n" "$blue" "$reset"; free -h
+	printf "%bTop 5 Memory Comsuming Processes:%b\n" "$blue" "$reset"; ps -eo %mem,%cpu,comm --sort=-%mem | head -n 6
+	if df -h | grep "100%" &> /dev/null; then printf "%bFull filesystems:%b\n" "$blue" "$reset"; df -Th | grep "100%"; fi
+	if df -i | grep "100%" &> /dev/null; then printf "%bFull inodes:%b\n" "$blue" "$reset"; df -i | grep "100%"; fi
+}
+
+get_args() {
+	while getopts ':hvdipfm' option; do
+		case "$option" in
+			h) usage; exit 0 ;;
+			v) printf "%s\n" "$version"; exit 0 ;;
+			d)
+				printf "%bDisk Space Usage:%b\n" "$blue" "$reset"
+				while IFS="" read -r line; do
+					case "$line" in
+						*100%*) printf "%b%s%b\n" "$red" "$line" "$reset" ;;
+						*9?%*) printf "%b%s%b\n" "$yellow" "$line" "$reset" ;;
+						*) printf "%s\n" "$line" ;;
+					esac
+				done < <(if ! df -Th "$dir" 2> /dev/null; then df -Th; fi)
+			;;
+
+			i)
+				printf "%bInode Usage:%b\n" "$blue" "$reset"
+				while IFS="" read -r line; do
+					case "$line" in
+						*100%*) printf "%b%s%b\n" "$red" "$line" "$reset" ;;
+						*9?%*) printf "%b%s%b\n" "$yellow" "$line" "$reset" ;;
+						*) printf "%s\n" "$line" ;;
+					esac
+				done < <(if ! df -i "$dir" 2> /dev/null; then df -i; fi)
+			;;
+
+			p)
+				printf "%bWorld writable files:%b\n" "$blue" "$reset"
+				sudo find "${dir:-.}" ! -type l -perm -002
+				printf "%bFiles with setuids:%b\n" "$blue" "$reset"
+				sudo find "${dir:-.}" -perm -4000
+				printf "%bFiles with setguids:%b\n" "$blue" "$reset"
+				sudo find "${dir:-.}" -perm -2000
+			;;
+
+			f)
+				printf "%b10 Largest Files in Directory Tree:%b\n" "$blue" "$reset"
+				sudo find "${dir:-.}" -type f -exec du -Sh {} + | sort -rn | head
+			;;
+
+			m)
+				while IFS="" read -r mount; do
+					if ! findmnt "$mount" &> /dev/null; then
+						printf "%b%s is declared in fstab but not mounted\n%b" "$red" "$mount" "$reset"
+					else
+						printf "%s is mounted properly\n" "$mount"
+					fi
+				done < <(awk '$1!~/^#/&&$2~/^[/]/{print $2}' /etc/fstab)
+			;;
+
+			?)
+				printf "health: invalid option -- '%s'\n" "$OPTARG"
+				printf "Try 'health -h' for more information.\n"; exit 1
+			;;
+		esac
+	done
+}
+
+main() {
+	yellow='\033[38;5;226m'
+	blue='\033[38;5;33m'
+	red='\033[38;5;160m'
+	reset='\033[0m'
+	if [[ "$#" -ge 1 ]]; then
+		for dir in "$@"; do :; done
+		[[ ! -d "$dir" ]] && unset dir
+		get_args "$@"
+	else
+		health
+	fi
+}
+
+main "$@"
