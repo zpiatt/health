@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-version="Health version: 1.0.0 - February 23, 2023"
+version="Health version: 1.1.0 - April 6, 2023"
 
 usage() {
 	cat <<-EOF
@@ -32,20 +32,21 @@ usage() {
 	  -v,   display version number and exit
 	  -h,   display this help and exit
 
-	Full documentation <https://github.com/zpiatt/health>.
+	Full documentation <https://github.com/zpiatt/health>
 	${version}
 	EOF
 	return
 }
 
 health() {
-	printf "%bHostname:%b " "$blue" "$reset"; hostname
-	printf "%bOS Version:%b " "$blue" "$reset"; grep -Po "(?<=PRETTY_NAME=\").*[^\"]" /etc/os-release
-	printf "%bKernel Version:%b " "$blue" "$reset"; uname -r
-	printf "%bUptime:%b " "$blue" "$reset"; uptime
+	printf "%bHostname: %b" "$blue" "$reset"; hostname
+	printf "%bOS Version: %b" "$blue" "$reset"; grep -Po "(?<=PRETTY_NAME=\").*[^\"]" /etc/os-release
+	printf "%bKernel Version: %b" "$blue" "$reset"; uname -r
+	printf "%bUptime: %b" "$blue" "$reset"; uptime
 	printf "%bUsers Currently Logged in:%b\n" "$blue" "$reset"; who -u
 	printf "%bMemory Usage:%b\n" "$blue" "$reset"; free -h
 	printf "%bTop 5 Memory Comsuming Processes:%b\n" "$blue" "$reset"; ps -eo %mem,%cpu,comm --sort=-%mem | head -n 6
+	printf "%bZombie Process Count: %b" "$blue" "$reset"; ps -axo stat | awk 'BEGIN{i=0}/Z/{i++};END{print i}'
 	if df -h | grep "100%" &> /dev/null; then printf "%bFull filesystems:%b\n" "$blue" "$reset"; df -Th | grep "100%"; fi
 	if df -i | grep "100%" &> /dev/null; then printf "%bFull inodes:%b\n" "$blue" "$reset"; df -i | grep "100%"; fi
 }
@@ -57,7 +58,7 @@ get_args() {
 			v) printf "%s\n" "$version"; exit 0 ;;
 			d)
 				printf "%bDisk Space Usage:%b\n" "$blue" "$reset"
-				while IFS="" read -r line; do
+				while IFS= read -r line; do
 					case "$line" in
 						*100%*) printf "%b%s%b\n" "$red" "$line" "$reset" ;;
 						*9?%*) printf "%b%s%b\n" "$yellow" "$line" "$reset" ;;
@@ -68,7 +69,7 @@ get_args() {
 
 			i)
 				printf "%bInode Usage:%b\n" "$blue" "$reset"
-				while IFS="" read -r line; do
+				while IFS= read -r line; do
 					case "$line" in
 						*100%*) printf "%b%s%b\n" "$red" "$line" "$reset" ;;
 						*9?%*) printf "%b%s%b\n" "$yellow" "$line" "$reset" ;;
@@ -92,7 +93,7 @@ get_args() {
 			;;
 
 			m)
-				while IFS="" read -r mount; do
+				while IFS= read -r mount; do
 					if ! findmnt "$mount" &> /dev/null; then
 						printf "%b%s is declared in fstab but not mounted\n%b" "$red" "$mount" "$reset"
 					else
