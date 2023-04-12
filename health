@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Health: A command-line Red-Hat quick status check tool written in bash 3.2+.
+# Health: A command-line Enterprise Linux quick status check tool written in bash 3.2+.
 # https://github.com/zpiatt/health
 #
 # Copyright (C) 2023 Zac Piatt
@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-version="Health version: 1.1.0 - April 6, 2023"
+version="Health version: 1.1.1 - April 12, 2023"
 
 usage() {
 	cat <<-EOF
@@ -46,9 +46,23 @@ health() {
 	printf "%bUsers Currently Logged in:%b\n" "$blue" "$reset"; who -u
 	printf "%bMemory Usage:%b\n" "$blue" "$reset"; free -h
 	printf "%bTop 5 Memory Comsuming Processes:%b\n" "$blue" "$reset"; ps -eo %mem,%cpu,comm --sort=-%mem | head -n 6
-	printf "%bZombie Process Count: %b" "$blue" "$reset"; ps -axo stat | awk 'BEGIN{i=0}/Z/{i++};END{print i}'
-	if df -h | grep "100%" &> /dev/null; then printf "%bFull filesystems:%b\n" "$blue" "$reset"; df -Th | grep "100%"; fi
-	if df -i | grep "100%" &> /dev/null; then printf "%bFull inodes:%b\n" "$blue" "$reset"; df -i | grep "100%"; fi
+	if [[ $(ps -axo stat | awk 'BEGIN{i=0}/Z/{i++};END{print i}') -gt 0 ]]; then
+		printf "%bZombie Processes: %b" "$blue" "$reset"; ps -axo stat | awk 'BEGIN{i=0}/Z/{i++};END{print i}'
+	fi
+	[[ -n $(df -h | grep "100%") ]] && printf "%bFull filesystems:%b\n" "$blue" "$reset"; df -Th | grep "100%"
+	[[ -n $(df -i | grep "100%") ]] && printf "%bFull inodes:%b\n" "$blue" "$reset"; df -i | grep "100%"
+	if [[ -n $(dmesg -l emerg,alert,crit,err,warn) ]]; then
+		[[ -n $(dmesg -l emerg) ]] && \
+			printf "%bdmesg: %bemergency%b messages - %d\n" "$blue" "$red" "$reset" $(dmesg -l emerg | wc -l)
+		[[ -n $(dmesg -l alert) ]] && \
+			printf "%bdmesg: %balert%b messages - %d\n" "$blue" "$red" "$reset" $(dmesg -l alert | wc -l)
+		[[ -n $(dmesg -l crit) ]] && \
+			printf "%bdmesg: %bcritical%b messages - %d\n" "$blue" "$orange" "$reset" $(dmesg -l crit | wc -l)
+		[[ -n $(dmesg -l err) ]] && \
+			printf "%bdmesg: %berror%b messages - %d\n" "$blue" "$yellow" "$reset" $(dmesg -l err | wc -l)
+		[[ -n $(dmesg -l warn) ]] && \
+			printf "%bdmesg: %bwarning%b messages - %d\n" "$blue" "$yellow" "$reset" $(dmesg -l warn | wc -l)
+	fi
 }
 
 get_args() {
@@ -114,6 +128,7 @@ main() {
 	yellow='\033[38;5;226m'
 	blue='\033[38;5;33m'
 	red='\033[38;5;160m'
+	orange='\033[38;5;202m'
 	reset='\033[0m'
 	if [[ "$#" -ge 1 ]]; then
 		for dir in "$@"; do :; done
