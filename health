@@ -53,9 +53,9 @@ health() {
 	printf "%bTop 5 Processes by Memory:%b\n" "$blue" "$reset"; ps -eo %mem,comm,pid --sort=-%mem | head -n 6
 	printf "%bTop 5 Processes by CPU:%b\n" "$blue" "$reset"; ps -eo pcpu,comm,pid --sort=-pcpu | head -n 6
 	printf "%bMounts:%b\n" "$blue" "$reset"
-	if ! timeout 1 df &> /dev/null; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
+	if ! timeout 1 df | grep -q; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
 	while IFS= read -r mount; do
-		if ! findmnt "$mount" &> /dev/null; then
+		if ! findmnt "$mount" | grep -q; then
 			printf "%b%s is declared in fstab but not mounted\n%b" "$yellow" "$mount" "$reset"
 			error=true
 		fi
@@ -72,7 +72,7 @@ get_args() {
 			v) printf "%s\n" "$version"; exit 0 ;;
 			r) ssh -qt "$OPTARG" "/usr/bin/health" ;;
 			d)
-				if ! timeout 1 df &> /dev/null; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
+				if ! timeout 1 df | grep -q; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
 				printf "%bDisk Space Usage:%b\n" "$blue" "$reset"
 				while IFS= read -r line; do
 					case "$line" in
@@ -84,7 +84,7 @@ get_args() {
 			;;
 
 			i)
-				if ! timeout 1 df &> /dev/null; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
+				if ! timeout 1 df | grep -q; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
 				printf "%bInode Usage:%b\n" "$blue" "$reset"
 				while IFS= read -r line; do
 					case "$line" in
@@ -111,7 +111,7 @@ get_args() {
 
 			m)
 				while IFS= read -r mount; do
-					if ! findmnt "$mount" &> /dev/null; then
+					if ! findmnt "$mount" | grep -q; then
 						printf "%b%s is declared in fstab but not mounted\n%b" "$red" "$mount" "$reset"
 					else
 						printf "%s is mounted properly\n" "$mount"
