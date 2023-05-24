@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Health: A command-line Red Hat system health check tool written in  bash 3.2+.
+# Health: A command-line Red Hat system health check tool written in bash 3.2+.
 # https://github.com/zpiatt/health
 #
 # Copyright (C) 2023 Zac Piatt
@@ -24,16 +24,16 @@ usage() {
 	cat <<-EOF
 	Usage: health [OPTION]... [DIRECTORY]...
 
-	  -d,   display colorized file system disk space usage
-	  -i,    display colorized file systems inodes usage
-	  -s,    search for common file permission vulnerabilities
-	  -f,    report 10 largest files in directory tree
-	  -m,    compare mounts to /etc/fstab
-	  -z,    display zombie process count, if any
-	  -r,    display health on remote host
-	  -e,    parse dmesg for alerts, errors, etc.
-	  -v,   display version number and exit
-	  -h,   display this help and exit
+	  -d,	display colorized file system disk space usage
+	  -i,	display colorized file systems inodes usage
+	  -s,	search for common file permission vulnerabilities
+	  -f,	report 10 largest files in directory tree
+	  -m,	compare mounts to /etc/fstab
+	  -z,	display zombie process count, if any
+	  -r,	display health on remote host
+	  -e,	parse dmesg for alerts, errors, etc.
+	  -v,	display version number and exit
+	  -h,	display this help and exit
 
 	Full documentation <https://github.com/zpiatt/health>
 	${version}
@@ -70,7 +70,7 @@ get_args() {
 		case "$option" in
 			h) usage; exit 0 ;;
 			v) printf "%s\n" "$version"; exit 0 ;;
-			r) ssh -qt "$OPTARG" "/sa/bin/health" ;;
+			r) ssh -qt "$OPTARG" "/usr/bin/health" ;;
 			d)
 				if ! timeout 1 df &> /dev/null; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
 				printf "%bDisk Space Usage:%b\n" "$blue" "$reset"
