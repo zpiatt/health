@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Health: A command-line Red-Hat Enterprise Linux quick status check tool written in bash 3.2+.
+# Health: A command-line Red Hat system health check tool written in  bash 3.2+.
 # https://github.com/zpiatt/health
 #
 # Copyright (C) 2023 Zac Piatt
@@ -18,20 +18,20 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-version="Health version: 1.2.3 - May 10, 2023"
+version="Health version: 1.2.4 - May 23, 2023"
 
 usage() {
 	cat <<-EOF
 	Usage: health [OPTION]... [DIRECTORY]...
 
 	  -d,   display colorized file system disk space usage
-	  -i,   display colorized file systems inodes usage
-	  -s,   search for common file permission vulnerabilities
-	  -f,   report 10 largest files in directory tree
-	  -m,   compare mounts to /etc/fstab
-	  -z,   display zombie process count, if any
-	  -r,   display health on remote host
-	  -e,   parse dmesg for alerts, errors, etc.
+	  -i,    display colorized file systems inodes usage
+	  -s,    search for common file permission vulnerabilities
+	  -f,    report 10 largest files in directory tree
+	  -m,    compare mounts to /etc/fstab
+	  -z,    display zombie process count, if any
+	  -r,    display health on remote host
+	  -e,    parse dmesg for alerts, errors, etc.
 	  -v,   display version number and exit
 	  -h,   display this help and exit
 
@@ -50,12 +50,19 @@ health() {
 	printf "%bUptime:%b " "$blue" "$reset"; uptime
 	printf "%bUsers Currently Logged in:%b\n" "$blue" "$reset"; who -u
 	printf "%bMemory Usage:%b\n" "$blue" "$reset"; free -h
-	printf "%bTop 5 Memory Comsuming Processes:%b\n" "$blue" "$reset"; ps -eo %mem,%cpu,comm --sort=-%mem | head -n 6
-	printf "%bFile System Report:%b\n" "$blue" "$reset"
-	if ! timeout 1 df -h &> /dev/null; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
-	[[ -n $(df -h | grep "100%") ]] && printf "%bFull file system:\n%b" "$blue" "$reset"; df -h | grep "100%" && error=true
-	[[ -n $(df -i | grep "100%") ]] && printf "%bFull inodes:\n%b" "$blue" "$reset"; df -i | grep "100%" && error=true
-	[[ -z "$error" ]] && printf "Mounts & disk/inode usage: %bGOOD%b\n" "$green" "$reset"
+	printf "%bTop 5 Processes by Memory:%b\n" "$blue" "$reset"; ps -eo %mem,comm,pid --sort=-%mem | head -n 6
+	printf "%bTop 5 Processes by CPU:%b\n" "$blue" "$reset"; ps -eo pcpu,comm,pid --sort=-pcpu | head -n 6
+	printf "%bMounts:%b\n" "$blue" "$reset"
+	if ! timeout 1 df &> /dev/null; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
+	while IFS= read -r mount; do
+		if ! findmnt "$mount" &> /dev/null; then
+			printf "%b%s is declared in fstab but not mounted\n%b" "$yellow" "$mount" "$reset"
+			error=true
+		fi
+	done < <(awk '$1!~/^#/ && $2~/^[/]/{print $2}' /etc/fstab)
+	[[ -z "$error" ]] && printf "No issues detected\n"
+	printf "%bFull File Systems:%b\n%s\n" "$blue" "$reset" "$(df -h | grep "100%" || printf "None\n")"
+	printf "%bFull Inodes:%b\n%s\n" "$blue" "$reset" "$(df -i | grep "100%" || printf "None\n")"
 }
 
 get_args() {
@@ -63,11 +70,11 @@ get_args() {
 		case "$option" in
 			h) usage; exit 0 ;;
 			v) printf "%s\n" "$version"; exit 0 ;;
-			r) ssh -qt "$OPTARG" health ;;
+			r) ssh -qt "$OPTARG" "/sa/bin/health" ;;
 			d)
-				if ! timeout 1 df -h &> /dev/null; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
+				if ! timeout 1 df &> /dev/null; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
 				printf "%bDisk Space Usage:%b\n" "$blue" "$reset"
-				while IFS="" read -r line; do
+				while IFS= read -r line; do
 					case "$line" in
 						*100%*) printf "%b%s%b\n" "$red" "$line" "$reset" ;;
 						*9?%*) printf "%b%s%b\n" "$yellow" "$line" "$reset" ;;
@@ -77,9 +84,9 @@ get_args() {
 			;;
 
 			i)
-				if ! timeout 1 df -h &> /dev/null; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
+				if ! timeout 1 df &> /dev/null; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
 				printf "%bInode Usage:%b\n" "$blue" "$reset"
-				while IFS="" read -r line; do
+				while IFS= read -r line; do
 					case "$line" in
 						*100%*) printf "%b%s%b\n" "$red" "$line" "$reset" ;;
 						*9?%*) printf "%b%s%b\n" "$yellow" "$line" "$reset" ;;
@@ -89,21 +96,21 @@ get_args() {
 			;;
 
 			s)
-				printf "%bWorld writable files:%b\n" "$blue" "$reset"
-				sudo find "${dir:-.}" ! -type l -perm -002
-				printf "%bFiles with setuids:%b\n" "$blue" "$reset"
-				sudo find "${dir:-.}" -perm -4000
-				printf "%bFiles with setguids:%b\n" "$blue" "$reset"
-				sudo find "${dir:-.}" -perm -2000
+				[[ -n $(find "${dir:-.}" ! -type l -perm -002) ]] &&\
+					printf "%bWorld writable files:%b\n" "$blue" "$reset"; find "${dir:-.}" ! -type l -perm -002
+				[[ -n $(find "${dir:-.}" -perm -4000) ]] &&\
+					printf "%bFiles with setuids:%b\n" "$blue" "$reset"; find "${dir:-.}" -perm -4000
+				[[ -n $(find "${dir:-.}" -perm -2000) ]] &&\
+					printf "%bFiles with setguids:%b\n" "$blue" "$reset"; find "${dir:-.}" -perm -2000
 			;;
 
 			f)
 				printf "%b10 Largest Files in Directory Tree:%b\n" "$blue" "$reset"
-				sudo find "${dir:-.}" -type f -exec du -Sh {} + | sort -rn | head
+				find "${dir:-.}" -type f -exec du -Sh {} + | sort -rn | head
 			;;
 
 			m)
-				while IFS="" read -r mount; do
+				while IFS= read -r mount; do
 					if ! findmnt "$mount" &> /dev/null; then
 						printf "%b%s is declared in fstab but not mounted\n%b" "$red" "$mount" "$reset"
 					else
@@ -120,16 +127,16 @@ get_args() {
 			e)
 				if [[ -n $(dmesg -l emerg,crit,alert,err,warn 2> /dev/null) ]]; then
 					printf "%bdmesg:%b\n" "$blue" "$reset"
-					[[ -n $(dmesg -l emerg) ]] && \
-						printf "%bemergency messages%b: %d\n" "$red" "$reset" "$(dmesg -l emerg | wc -l)"
-					[[ -n $(dmesg -l alert) ]] && \
-						printf "%balert messages%b: %d\n" "$red" "$reset" "$(dmesg -l alert | wc -l)"
-					[[ -n $(dmesg -l crit) ]] && \
-						printf "%bcritical messages%b: %d\n" "$orange" "$reset" "$(dmesg -l crit | wc -l)"
-					[[ -n $(dmesg -l err) ]] && \
-						printf "%berror messages%b: %d\n" "$yellow" "$reset" "$(dmesg -l err | wc -l)"
-					[[ -n $(dmesg -l warn) ]] && \
-						printf "%bwarning messages%b: %d\n" "$yellow" "$reset" "$(dmesg -l warn | wc -l)"
+				[[ -n $(dmesg -l emerg) ]] && \
+					printf "%bemergency messages%b: %d\n" "$red" "$reset" "$(dmesg -l emerg | wc -l)"
+				[[ -n $(dmesg -l alert) ]] && \
+					printf "%balert messages%b: %d\n" "$red" "$reset" "$(dmesg -l alert | wc -l)"
+				[[ -n $(dmesg -l crit) ]] && \
+					printf "%bcritical messages%b: %d\n" "$orange" "$reset" "$(dmesg -l crit | wc -l)"
+				[[ -n $(dmesg -l err) ]] && \
+					printf "%berror messages%b: %d\n" "$yellow" "$reset" "$(dmesg -l err | wc -l)"
+				[[ -n $(dmesg -l warn) ]] && \
+					printf "%bwarning messages%b: %d\n" "$yellow" "$reset" "$(dmesg -l warn | wc -l)"
 				fi
 			;;
 
