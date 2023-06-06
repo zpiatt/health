@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-version="Health version: 1.2.4 - May 23, 2023"
+version="Health version: 1.2.5 - June 5, 2023"
 
 usage() {
 	cat <<-EOF
@@ -43,7 +43,7 @@ usage() {
 
 health() {
 	printf "%bHostname:%b " "$blue" "$reset"; hostname -f
-	printf "%bServer Type:%b %s, %s\n" "$blue" "$reset"\
+	printf "%bServer Info:%b %s, %s\n" "$blue" "$reset"\
 		"$(< /sys/devices/virtual/dmi/id/product_name)" "$(< /sys/devices/virtual/dmi/id/sys_vendor)"
 	printf "%bRHEL Version:%b %s\n" "$blue" "$reset" "$(< /etc/redhat-release)"
 	printf "%bKernel Version:%b " "$blue" "$reset"; uname -r
@@ -53,7 +53,7 @@ health() {
 	printf "%bTop 5 Processes by Memory:%b\n" "$blue" "$reset"; ps -eo %mem,comm,pid --sort=-%mem | head -n 6
 	printf "%bTop 5 Processes by CPU:%b\n" "$blue" "$reset"; ps -eo pcpu,comm,pid --sort=-pcpu | head -n 6
 	printf "%bMounts:%b\n" "$blue" "$reset"
-	if ! timeout 1 df &> /dev/null; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
+	if ! timeout 2 df &> /dev/null; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
 	while IFS= read -r mount; do
 		if ! findmnt "$mount" &> /dev/null; then
 			printf "%b%s is declared in fstab but not mounted\n%b" "$yellow" "$mount" "$reset"
@@ -72,7 +72,7 @@ get_args() {
 			v) printf "%s\n" "$version"; exit 0 ;;
 			r) ssh -qt "$OPTARG" "/usr/bin/health" ;;
 			d)
-				if ! timeout 1 df &> /dev/null; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
+				if ! timeout 2 df &> /dev/null; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
 				printf "%bDisk Space Usage:%b\n" "$blue" "$reset"
 				while IFS= read -r line; do
 					case "$line" in
@@ -84,7 +84,7 @@ get_args() {
 			;;
 
 			i)
-				if ! timeout 1 df &> /dev/null; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
+				if ! timeout 2 df &> /dev/null; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
 				printf "%bInode Usage:%b\n" "$blue" "$reset"
 				while IFS= read -r line; do
 					case "$line" in
@@ -96,12 +96,10 @@ get_args() {
 			;;
 
 			s)
-				[[ -n $(find "${dir:-.}" ! -type l -perm -002) ]] &&\
-					printf "%bWorld writable files:%b\n" "$blue" "$reset"; find "${dir:-.}" ! -type l -perm -002
-				[[ -n $(find "${dir:-.}" -perm -4000) ]] &&\
-					printf "%bFiles with setuids:%b\n" "$blue" "$reset"; find "${dir:-.}" -perm -4000
-				[[ -n $(find "${dir:-.}" -perm -2000) ]] &&\
-					printf "%bFiles with setguids:%b\n" "$blue" "$reset"; find "${dir:-.}" -perm -2000
+				[[ -n $(find "${dir:-.}" ! -type l -perm -002) ]] && \
+					printf "%bWorld writable files:%b\n%s\n" "$blue" "$reset" "$(find "${dir:-.}" ! -type l -perm -002)"
+				[[ -n $(find "${dir:-.}" -perm -4000 -o -perm -2000) ]] && \
+					printf "%bFiles with setgids/setuids:%b\n%s\n" "$blue" "$reset" "$(find "${dir:-.}" -perm -4000 -o -perm -2000)"
 			;;
 
 			f)
