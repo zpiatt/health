@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-version="Health version: 1.2.5 - June 5, 2023"
+version="Health version: 1.2.6 - June 23, 2023"
 
 usage() {
 	cat <<-EOF
@@ -31,7 +31,7 @@ usage() {
 	  -m,	compare mounts to /etc/fstab
 	  -z,	display zombie process count, if any
 	  -r,	display health on remote host
-	  -e,	parse dmesg for alerts, errors, etc.
+	  -e,	parse dmesg for alerts, errors, etc. (dmesg v2.23+ required)
 	  -v,	display version number and exit
 	  -h,	display this help and exit
 
@@ -42,16 +42,16 @@ usage() {
 }
 
 health() {
-	printf "%bHostname:%b " "$blue" "$reset"; hostname -f
-	printf "%bServer Info:%b %s, %s\n" "$blue" "$reset"\
+	printf "%bHostname:%b %s\n" "$blue" "$reset" "$(hostname)"
+	printf "%bServer Info:%b %s, %s\n" "$blue" "$reset" \
 		"$(< /sys/devices/virtual/dmi/id/product_name)" "$(< /sys/devices/virtual/dmi/id/sys_vendor)"
 	printf "%bRHEL Version:%b %s\n" "$blue" "$reset" "$(< /etc/redhat-release)"
-	printf "%bKernel Version:%b " "$blue" "$reset"; uname -r
-	printf "%bUptime:%b " "$blue" "$reset"; uptime
-	printf "%bUsers Currently Logged in:%b\n" "$blue" "$reset"; who -u
-	printf "%bMemory Usage:%b\n" "$blue" "$reset"; free -h
-	printf "%bTop 5 Processes by Memory:%b\n" "$blue" "$reset"; ps -eo %mem,comm,pid --sort=-%mem | head -n 6
-	printf "%bTop 5 Processes by CPU:%b\n" "$blue" "$reset"; ps -eo pcpu,comm,pid --sort=-pcpu | head -n 6
+	printf "%bKernel Version:%b %s\n" "$blue" "$reset" "$(uname -r)"
+	printf "%bUptime:%b %s\n" "$blue" "$reset" "$(uptime)"
+	printf "%bUsers Currently Logged in:%b\n%s\n" "$blue" "$reset" "$(who -u)"
+	printf "%bMemory Usage:%b\n%s\n" "$blue" "$reset" "$(free -h)"
+	printf "%bTop 5 Processes by Memory:%b\n%s\n" "$blue" "$reset" "$(ps -eo %mem,comm,pid --sort=-%mem | head -n 6)"
+	printf "%bTop 5 Processes by CPU:%b\n%s\n" "$blue" "$reset" "$(ps -eo pcpu,comm,pid --sort=-pcpu | head -n 6)"
 	printf "%bMounts:%b\n" "$blue" "$reset"
 	if ! timeout 2 df &> /dev/null; then printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; fi
 	while IFS= read -r mount; do
@@ -123,18 +123,22 @@ get_args() {
 			;;
 
 			e)
-				if [[ -n $(dmesg -l emerg,crit,alert,err,warn 2> /dev/null) ]]; then
-					printf "%bdmesg:%b\n" "$blue" "$reset"
-				[[ -n $(dmesg -l emerg) ]] && \
-					printf "%bemergency messages%b: %d\n" "$red" "$reset" "$(dmesg -l emerg | wc -l)"
-				[[ -n $(dmesg -l alert) ]] && \
-					printf "%balert messages%b: %d\n" "$red" "$reset" "$(dmesg -l alert | wc -l)"
-				[[ -n $(dmesg -l crit) ]] && \
-					printf "%bcritical messages%b: %d\n" "$orange" "$reset" "$(dmesg -l crit | wc -l)"
-				[[ -n $(dmesg -l err) ]] && \
-					printf "%berror messages%b: %d\n" "$yellow" "$reset" "$(dmesg -l err | wc -l)"
-				[[ -n $(dmesg -l warn) ]] && \
-					printf "%bwarning messages%b: %d\n" "$yellow" "$reset" "$(dmesg -l warn | wc -l)"
+				if ! dmesg -V &> /dev/null; then
+					printf "health: dmesg version insufficient"
+					printf "Try 'health -h' for more information.\n"; exit 1
+				else
+					if [[ -n $(dmesg -l emerg,crit,alert,err,warn 2> /dev/null) ]]; then
+						[[ -n $(dmesg -l emerg) ]] && \
+							printf "%bemergency messages%b: %d\n" "$red" "$reset" "$(dmesg -l emerg | wc -l)"
+						[[ -n $(dmesg -l crit) ]] && \
+							printf "%bcritical messages%b: %d\n" "$red" "$reset" "$(dmesg -l crit | wc -l)"
+						[[ -n $(dmesg -l alert) ]] && \
+							printf "%balert messages%b: %d\n" "$orange" "$reset" "$(dmesg -l alert | wc -l)"
+						[[ -n $(dmesg -l err) ]] && \
+							printf "%berror messages%b: %d\n" "$yellow" "$reset" "$(dmesg -l err | wc -l)"
+						[[ -n $(dmesg -l warn) ]] && \
+							printf "%bwarning messages%b: %d\n" "$yellow" "$reset" "$(dmesg -l warn | wc -l)"
+					fi
 				fi
 			;;
 
