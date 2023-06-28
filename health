@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-version="Health version: 1.2.8 - June 25, 2023"
+version="Health version: 1.2.9 - June 27, 2023"
 
 usage() {
 	cat <<-EOF
@@ -166,8 +166,6 @@ get_args() {
 			;;
 		esac
 	done
-	shift "$((OPTIND -1))"
-	[[ -n "${1:-}" ]] && printf "health: %s: Not a directory\n" "$1"
 }
 
 main() {
