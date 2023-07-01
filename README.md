@@ -18,4 +18,4 @@ Recently added:
 
 If you're working with a common enterprise Linux, and something isn't working for you, or you have an idea for checking for a routine error, please let me know!
 
-### More: \[[Wiki](https://github.com/zpiatt/health/wiki)\]
+### More: \[[Installation](https://github.com/zpiatt/health/wiki/Installation)\] \[[Wiki](https://github.com/zpiatt/health/wiki)\]
