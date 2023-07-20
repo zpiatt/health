@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-version="Health version: 1.3.0 - July 1, 2023"
+version="Health version: 1.3.1 - July 19, 2023"
 
 usage() {
 	cat <<-EOF
@@ -44,8 +44,9 @@ usage() {
 
 health() {
 	printf "%bHostname:%b %s\n" "$blue" "$reset" "$(hostname)"
-	printf "%bServer Info:%b %s, %s\n" "$blue" "$reset" \
-		"$(< /sys/devices/virtual/dmi/id/product_name)" "$(< /sys/devices/virtual/dmi/id/sys_vendor)"
+	[[ -d "/sys/devices/virtual/dmi/id" ]] && {
+		dir="/sys/devices/virtual/dmi/id"
+		printf "%bServer Info:%b %s, %s\n" "$blue" "$reset" "$(< ${dir}/product_name)" "$(< ${dir}/sys_vendor)"; }
 	printf "%bLinux Version:%b %s\n" "$blue" "$reset" \
 		"$(grep -Po "(?<=PRETTY_NAME=\").*[^\"]" /etc/os-release)"
 	printf "%bKernel Version:%b %s\n" "$blue" "$reset" "$(uname -r)"
@@ -57,18 +58,27 @@ health() {
 	printf "%bTop 5 Processes by CPU:%b\n%s\n" "$blue" "$reset" \
 		"$(ps -eo pcpu,comm,pid --sort=-pcpu | head -n 6)"
 	printf "%bMounts:%b\n" "$blue" "$reset"
-	if ! timeout 2 df &> /dev/null; then
-		printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return
-	fi
+	timeout 2 df &> /dev/null || { printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; }
 	while IFS= read -r mount; do
-		if ! findmnt "$mount" &> /dev/null; then
+		findmnt "$mount" &> /dev/null || {
 			printf "%b%s is declared in fstab but not mounted\n%b" "$yellow" "$mount" "$reset"
-			error=true
-		fi
+			error=true; }
 	done < <(awk '$1!~/^#/ && $2~/^[/]/{print $2}' /etc/fstab)
 	[[ -z "$error" ]] && printf "No issues detected\n"
 	printf "%bFull File Systems:%b\n%s\n" "$blue" "$reset" "$(df -h | grep "100%" || printf "None\n")"
 	printf "%bFull Inodes:%b\n%s\n" "$blue" "$reset" "$(df -i | grep "100%" || printf "None\n")"
+}
+
+check_df() { 
+	timeout 2 df &> /dev/null || { printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; }
+	printf "%bDisk Space Usage:%b\n" "$blue" "$reset"
+	while IFS= read -r line; do
+		case "$line" in
+			*100%*) printf "%b%s%b\n" "$red" "$line" "$reset" ;;
+			*9?%*) printf "%b%s%b\n" "$yellow" "$line" "$reset" ;;
+			*) printf "%s\n" "$line" ;;
+		esac
+	done < <(if ! df "${1}" "$dir" 2> /dev/null; then df "${1}"; fi)
 }
 
 get_args() {
@@ -78,34 +88,8 @@ get_args() {
 			v) printf "%s\n" "$version"; exit 0 ;;
 			r) ssh -qt "$OPTARG" "/usr/bin/health" ;;
 			u) find "${dir:-.}" -type f -printf "%h\n" | cut -d/ -f-2 | sort | uniq -c | sort -nr | head ;;
-			d)
-				if ! timeout 2 df &> /dev/null; then
-					printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return
-				fi
-				printf "%bDisk Space Usage:%b\n" "$blue" "$reset"
-				while IFS= read -r line; do
-					case "$line" in
-						*100%*) printf "%b%s%b\n" "$red" "$line" "$reset" ;;
-						*9?%*) printf "%b%s%b\n" "$yellow" "$line" "$reset" ;;
-						*) printf "%s\n" "$line" ;;
-					esac
-				done < <(if ! df -Th "$dir" 2> /dev/null; then df -Th; fi)
-			;;
-
-			i)
-				if ! timeout 2 df &> /dev/null; then
-					printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return
-				fi
-				printf "%bInode Usage:%b\n" "$blue" "$reset"
-				while IFS= read -r line; do
-					case "$line" in
-						*100%*) printf "%b%s%b\n" "$red" "$line" "$reset" ;;
-						*9?%*) printf "%b%s%b\n" "$yellow" "$line" "$reset" ;;
-						*) printf "%s\n" "$line" ;;
-					esac
-				done < <(if ! df -i "$dir" 2> /dev/null; then df -i; fi)
-			;;
-
+			d) check_df "-Th" ;;
+			i) check_df "-i" ;;
 			s)
 				[[ -n $(find "${dir:-.}" ! -type l -perm -002) ]] && \
 					printf "%bWorld writable files:%b\n%s\n" "$blue" "$reset" \
@@ -148,7 +132,7 @@ get_args() {
 							printf "%bcritical messages%b: %d\n" "$red" "$reset" \
 								"$(dmesg -l crit | wc -l)"
 						[[ -n $(dmesg -l alert) ]] && \
-							printf "%balert messages%b: %d\n" "$orange" "$reset" \
+							printf "%balert messages%b: %d\n" "$yellow" "$reset" \
 								"$(dmesg -l alert | wc -l)"
 						[[ -n $(dmesg -l err) ]] && \
 							printf "%berror messages%b: %d\n" "$yellow" "$reset" \
@@ -169,11 +153,10 @@ get_args() {
 }
 
 main() {
-	yellow='\033[38;5;226m'
-	blue='\033[38;5;33m'
-	red='\033[38;5;160m'
-	orange='\033[38;5;202m'
-	reset='\033[0m'
+	yellow=$(tput setaf 3)
+	blue=$(tput setaf 4)
+	red=$(tput setaf 1)
+	reset=$(tput sgr0)
 	if [[ "$#" -ge 1 ]]; then
 		for dir in "$@"; do :; done
 		[[ ! -d "$dir" ]] && unset dir
