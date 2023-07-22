@@ -1,6 +1,4 @@
 # Health
-<p align="left">A command line system status check tool written in bash 3.2+</p>
-
 <p align="left">
 <a href="./LICENSE.md"><img src="https://img.shields.io/github/license/zpiatt/health"></a>
 </p>
