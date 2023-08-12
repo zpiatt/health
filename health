@@ -18,147 +18,172 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.3.3 - July 23, 2023"
+readonly version="Health version: 1.4.0 - August 12, 2023"
 
 usage() {
-	cat <<-EOF
-	Usage: health [OPTION]... [DIRECTORY]...
-	Display general status info & check for common system errors
-
-	  -d,	display colorized file system disk space usage
-	  -i,	display colorized file systems inodes usage
-	  -s,	search for common file permission vulnerabilities
-	  -f,	report 10 largest files in specified directory tree
-	  -u,	report 10 largest directories by inode usage
-	  -m,	compare mounts to /etc/fstab
-	  -z,	display zombie process count, if any
-	  -r,	display health on remote host
-	  -e,	parse dmesg for alerts, errors, etc. (may require sudo)
-	  -v,	display version number and exit
-	  -h,	display this help and exit
-
-	Full documentation <https://github.com/zpiatt/health>
-	EOF
-	return
+    printf "Usage: health [OPTION]... [DIRECTORY]...\n"
+    printf "Display general status info & check for common system errors\n\n"
+    printf "  -d,   display colorized file system disk space usage\n"
+    printf "  -i,   display colorized file systems inodes usage\n"
+    printf "  -s,   search for common file permission vulnerabilities\n"
+    printf "  -f,   report 10 largest files in specified directory tree\n"
+    printf "  -u,   report 10 largest directories by inode usage\n"
+    printf "  -m,   compare mounts to /etc/fstab\n"
+    printf "  -z,   display zombie process count, if any\n"
+    printf "  -r,   display health on remote host\n"
+    printf "  -e,   parse dmesg for alerts, errors, etc. (may require sudo)\n"
+    printf "  -v,   display version number and exit\n"
+    printf "  -h,   display this help and exit\n\n"
+    printf "Full documentation <https://github.com/zpiatt/health>\n"
+    exit 0
 }
 
 health() {
-	printf "%bHostname:%b %s\n" "$blue" "$reset" "$(hostname)"
-	[[ -d "/sys/devices/virtual/dmi/id" ]] && {
-		local dir="/sys/devices/virtual/dmi/id"
-		printf "%bServer Info:%b %s, %s\n" "$blue" "$reset" "$(< ${dir}/product_name)" "$(< ${dir}/sys_vendor)"; }
-	printf "%bLinux Version:%b %s\n" "$blue" "$reset" \
-		"$(grep -Po "(?<=PRETTY_NAME=\").*[^\"]" /etc/os-release)"
-	printf "%bKernel Version:%b %s\n" "$blue" "$reset" "$(uname -r)"
-	printf "%bUptime:%b %s\n" "$blue" "$reset" "$(uptime)"
-	printf "%bUsers Currently Logged in:%b\n%s\n" "$blue" "$reset" "$(who -u)"
-	printf "%bMemory Usage:%b\n%s\n" "$blue" "$reset" "$(free -h)"
-	printf "%bTop 5 Processes by Memory:%b\n%s\n" "$blue" "$reset" \
-		"$(ps -eo %mem,comm,pid --sort=-%mem | head -n 6)"
-	printf "%bTop 5 Processes by CPU:%b\n%s\n" "$blue" "$reset" \
-		"$(ps -eo pcpu,comm,pid --sort=-pcpu | head -n 6)"
-	printf "%bMounts:%b\n" "$blue" "$reset"
-	timeout 2 df &> /dev/null || { printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; }
-	while IFS= read -r mount; do
-		findmnt "$mount" &> /dev/null || {
-			printf "%b%s is declared in fstab but not mounted\n%b" "$yellow" "$mount" "$reset"
-			error=true; }
-	done < <(awk '$1!~/^#/ && $2~/^[/]/{print $2}' /etc/fstab)
-	[[ -z "$error" ]] && printf "No issues detected\n"
-	printf "%bFull File Systems:%b\n%s\n" "$blue" "$reset" "$(df -h | grep "100%" || printf "None\n")"
-	printf "%bFull Inodes:%b\n%s\n" "$blue" "$reset" "$(df -i | grep "100%" || printf "None\n")"
+    local product_name sys_vendor vers mount
+
+    printf "%bHostname:%b %s\n" "$blue" "$reset" "$( hostname )"
+    product_name="$(< /sys/devices/virtual/dmi/id/product_name)"
+    sys_vendor="$(< /sys/devices/virtual/dmi/id/sys_vendor)"
+    [[ -n "$product_name" ]] && {
+        printf "%bServer Info:%b %s, %s\n" "$blue" "$reset" "$product_name" "$sys_vendor"; }
+    vers="$( grep -Po "(?<=PRETTY_NAME=\").*[^\"]" /etc/os-release )"
+    [[ -n "$vers" ]] && printf "%bLinux Version:%b %s\n" "$blue" "$reset" "$vers"
+    printf "%bKernel Version:%b %s\n" "$blue" "$reset" "$( uname -r )"
+    printf "%bUptime:%b %s\n" "$blue" "$reset" "$( uptime )"
+    printf "%bUsers Currently Logged in:%b\n%s\n" "$blue" "$reset" "$( who -u )"
+    printf "%bMemory Usage:%b\n%s\n" "$blue" "$reset" "$( free -h )"
+    printf "%bTop 5 Processes by Memory:%b\n%s\n" "$blue" "$reset" \
+        "$( ps -eo %mem,comm,pid --sort=-%mem | head -n 6 )"
+    printf "%bTop 5 Processes by CPU:%b\n%s\n" "$blue" "$reset" \
+        "$( ps -eo pcpu,comm,pid --sort=-pcpu | head -n 6 )"
+    printf "%bMounts:%b\n" "$blue" "$reset"
+    timeout 2 df &> /dev/null || { printf "%bHung mount detected.%b\n" "$yellow" "$reset" >&2; return 1; }
+    while IFS= read -r mount; do
+        findmnt "$mount" &> /dev/null || {
+            printf "%b%s is declared in fstab but not mounted\n%b" "$yellow" "$mount" "$reset"
+            error=true; }
+    done < <( awk '$1!~/^#/ && $2~/^[/]/ {print $2}' /etc/fstab )
+    [[ -z "$error" ]] && printf "No issues detected\n"
+    printf "%bFull File Systems:%b\n%s\n" "$blue" "$reset" "$(df -h | grep "100%" || printf "None\n")"
+    printf "%bFull Inodes:%b\n%s\n" "$blue" "$reset" "$(df -i | grep "100%" || printf "None\n")"
 }
 
 check_df() { 
-	timeout 2 df &> /dev/null || { printf "%bHung mount detected.%b\n" "$yellow" "$reset"; return; }
-	printf "%bDisk Space Usage:%b\n" "$blue" "$reset"
-	while IFS= read -r line; do
-		case "$line" in
-			*100%*) printf "%b%s%b\n" "$red" "$line" "$reset" ;;
-			*9?%*) printf "%b%s%b\n" "$yellow" "$line" "$reset" ;;
-			*) printf "%s\n" "$line" ;;
-		esac
-	done < <(if ! df "${1}" "$dir" 2> /dev/null; then df "${1}"; fi)
+    local line
+    timeout 2 df &> /dev/null || { printf "%bHung mount detected.%b\n" "$yellow" "$reset" >&2; return 1; }
+    printf "%bDisk Usage:%b\n" "$blue" "$reset"
+    while IFS= read -r line; do
+        case "$line" in
+            *100%*) printf "%b%s%b\n" "$red" "$line" "$reset" ;;
+            *9?%*) printf "%b%s%b\n" "$yellow" "$line" "$reset" ;;
+            *) printf "%s\n" "$line" ;;
+        esac
+    done < <(if ! df "${1}" "$dir" 2> /dev/null; then df "${1}"; fi)
+}
+
+dmesg_parse() {
+    local dmesg_level level emerg crit alert err warn
+    dmesg -V &> /dev/null || {
+        printf "health: dmesg version/permissions insufficient"
+        printf "Try 'health -h' for more information.\n"; exit 1; }
+    
+    dmesg_levels=(emerg crit alert err warn)
+    for level in "${dmesg_levels[@]}"; do
+        readarray "${level}" < <( dmesg -l "$level" )
+    done
+
+    [[ -n "$emerg" ]] && \
+        printf "%bemergency messages%b: %d\n" "$red" "$reset" "${#emerg[@]}"
+    [[ -n "$crit" ]] && \
+        printf "%bcritical messages%b: %d\n" "$red" "$reset" "${#crit[@]}"
+    [[ -n "$alert" ]] && \
+        printf "%balert messages%b: %d\n" "$yellow" "$reset" "${#alert[@]}"
+    [[ -n "$err" ]] && \
+        printf "%berror messages%b: %d\n" "$yellow" "$reset" "${#err[@]}"
+    [[ -n "$warn" ]] && \
+        printf "%bwarning messages%b: %d\n" "$yellow" "$reset" "${#warn[@]}"
+}
+
+large_files() {
+    printf "%b10 Largest Files in:%b %s\n" "$blue" "$reset" "$dir"
+    find "$dir" -type f -print0 | xargs -0 du -Sh | sort -rn | head
+}
+
+check_mounts() {
+    local mount
+    while IFS= read -r mount; do
+        if ! findmnt "$mount" &> /dev/null; then
+            printf "%b%s is declared in fstab but not mounted\n%b" "$red" "$mount" "$reset"
+        else
+            printf "%s is mounted properly\n" "$mount"
+        fi
+    done < <( awk '$1!~/^#/ && $2~/^[/]/{print $2}' /etc/fstab )
+}
+
+file_vulnerability() {
+    local world_write setbits
+    world_write="$( find "$dir" ! -type l -perm -002 )"
+    [[ -n "$world_write" ]] && printf "%bWorld writable files:%b\n%s\n" "$blue" "$reset" "$world_write"
+    setbits="$( find "$dir" -perm -4000 -o -perm -2000 )"
+    [[ -n "$setbits" ]] && printf "%bFiles with setgids/setuids:%b\n%s\n" "$blue" "$reset" "$setbits"
+}
+
+inode_usage() { find "$dir" -type f -printf "%h\n" | cut -d/ -f-2 | sort | uniq -c | sort -nr | head; }
+
+zombies() {
+    printf "%bZombie Process Count: %b" "$blue" "$reset"
+    ps axo stat | awk 'BEGIN{i=0}/Z/{i++;}END{print i}'
 }
 
 get_args() {
-	while getopts ':hvr:udislfmze' option; do
-		case "$option" in
-			h) usage; exit 0 ;;
-			v) printf "%s\n" "$version"; exit 0 ;;
-			r) ssh -qt "$OPTARG" "/usr/bin/health" ;;
-			u) find "${dir:-.}" -type f -printf "%h\n" | cut -d/ -f-2 | sort | uniq -c | sort -nr | head ;;
-			d) check_df "-Th" ;;
-			i) check_df "-i" ;;
-			s)
-				world_write="$(find "${dir:-.}" ! -type l -perm -002)"
-				[[ -n "$world_write" ]] && printf "%bWorld writable files:%b\n%s\n" "$blue" "$reset" "$world_write"
-				setbits="$(find "${dir:-.}" -perm -4000 -o -perm -2000)"
-				[[ -n "$setbits" ]] && printf "%bFiles with setgids/setuids:%b\n%s\n" "$blue" "$reset" "$setbits"
-			;;
-
-			f)
-				printf "%b10 Largest Files in Directory Tree:%b\n" "$blue" "$reset"
-				find "${dir:-.}" -type f -print0 | xargs -0 du -Sh | sort -rn | head
-			;;
-
-			m)
-				while IFS= read -r mount; do
-					if ! findmnt "$mount" &> /dev/null; then
-						printf "%b%s is declared in fstab but not mounted\n%b" "$red" "$mount" "$reset"
-					else
-						printf "%s is mounted properly\n" "$mount"
-					fi
-				done < <(awk '$1!~/^#/ && $2~/^[/]/{print $2}' /etc/fstab)
-			;;
-
-			z)
-				printf "%bZombie Process Count: %b" "$blue" "$reset"
-				ps axo stat | awk 'BEGIN{i=0}/Z/{i++;}END{print i}'
-			;;
-
-			e)
-				dmesg -V &> /dev/null || {
-					printf "health: dmesg version/permissions insufficient"
-					printf "Try 'health -h' for more information.\n"; exit 1; }
-				
-				local dmesg_levels=(emerg crit alert err warn)
-				for level in "${dmesg_levels[@]}"; do
-					readarray "${level}" < <(dmesg -l "$level")
-				done
-
-				[[ -n "$emerg" ]] && \
-					printf "%bemergency messages%b: %d\n" "$red" "$reset" "${#emerg[@]}"
-				[[ -n "$crit" ]] && \
-					printf "%bcritical messages%b: %d\n" "$red" "$reset" "${#crit[@]}"
-				[[ -n "$alert" ]] && \
-					printf "%balert messages%b: %d\n" "$yellow" "$reset" "${#alert[@]}"
-				[[ -n "$err" ]] && \
-					printf "%berror messages%b: %d\n" "$yellow" "$reset" "${#err[@]}"
-				[[ -n "$warn" ]] && \
-					printf "%bwarning messages%b: %d\n" "$yellow" "$reset" "${#warn[@]}"
-			;;
-
-			?)
-				printf "health: invalid option -- '%s'\n" "$OPTARG"
-				printf "Try 'health -h' for more information.\n"; exit 1
-			;;
-		esac
-	done
+    while getopts ':defhimr:suvz' option; do
+        case "$option" in
+            d) d=true ;;
+            e) e=true ;;
+            f) f=true ;;
+            h) usage ;;
+            i) i=true ;;
+            m) m=true ;;
+            r) ssh -qt "$OPTARG" "/usr/bin/health"; exit 0 ;;
+            s) s=true ;;
+            u) u=true ;;
+            v) printf "%s\n" "$version"; exit 0 ;;
+            z) f=true ;;
+            ?)
+                printf "health: invalid option -- '%s'\n" "$OPTARG" >&2
+                printf "Try 'health -h' for more information.\n" >&2; exit 2
+            ;;
+        esac
+    done
+    shift "$(( OPTIND -1 ))"
+    
+    if [[ -z "${1:-}" ]]; then
+       dir="$( pwd )"
+    elif [[ ! -d "$1" ]]; then
+        printf "'%s': not a valid path.\n" "$1" >&2; exit 2
+    else
+       dir="$1"
+    fi
 }
 
 main() {
-	yellow=$(tput setaf 3)
-	blue=$(tput setaf 4)
-	red=$(tput setaf 1)
-	reset=$(tput sgr0)
-	if [[ "$#" -ge 1 ]]; then
-		for dir in "$@"; do :; done
-		[[ ! -d "$dir" ]] && unset dir
-		get_args "$@"
-	else
-		health
-	fi
+    yellow=$(tput setaf 3)
+    blue=$(tput setaf 4)
+    red=$(tput setaf 1)
+    reset=$(tput sgr0)
+    if [[ "$#" -ge 1 ]]; then
+        get_args "$@"
+    else
+        health
+    fi
+    [[ "$d" ]] && check_df "-Th"
+    [[ "$e" ]] && dmesg_parse
+    [[ "$f" ]] && large_files
+    [[ "$i" ]] && check_df "-i"
+    [[ "$m" ]] && check_mounts
+    [[ "$s" ]] && file_vulnerability
+    [[ "$u" ]] && inode_usage
+    [[ "$z" ]] && zombies
 }
 
 main "$@"
