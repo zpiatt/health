@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.4.0 - August 12, 2023"
+readonly version="Health version: 1.4.1 - August 16, 2023"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -68,7 +68,7 @@ health() {
     printf "%bFull Inodes:%b\n%s\n" "$blue" "$reset" "$(df -i | grep "100%" || printf "None\n")"
 }
 
-check_df() { 
+check_df() {
     local line
     timeout 2 df &> /dev/null || { printf "%bHung mount detected.%b\n" "$yellow" "$reset" >&2; return 1; }
     printf "%bDisk Usage:%b\n" "$blue" "$reset"
@@ -78,7 +78,7 @@ check_df() {
             *9?%*) printf "%b%s%b\n" "$yellow" "$line" "$reset" ;;
             *) printf "%s\n" "$line" ;;
         esac
-    done < <(if ! df "${1}" "$dir" 2> /dev/null; then df "${1}"; fi)
+    done < <( df "${1}" )
 }
 
 dmesg_parse() {
@@ -86,7 +86,7 @@ dmesg_parse() {
     dmesg -V &> /dev/null || {
         printf "health: dmesg version/permissions insufficient"
         printf "Try 'health -h' for more information.\n"; exit 1; }
-    
+
     dmesg_levels=(emerg crit alert err warn)
     for level in "${dmesg_levels[@]}"; do
         readarray "${level}" < <( dmesg -l "$level" )
@@ -156,7 +156,7 @@ get_args() {
         esac
     done
     shift "$(( OPTIND -1 ))"
-    
+
     if [[ -z "${1:-}" ]]; then
        dir="$( pwd )"
     elif [[ ! -d "$1" ]]; then
@@ -184,6 +184,8 @@ main() {
     [[ "$s" ]] && file_vulnerability
     [[ "$u" ]] && inode_usage
     [[ "$z" ]] && zombies
+
+    return 0
 }
 
 main "$@"
