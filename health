@@ -18,29 +18,27 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.4.2 - August 31, 2023"
+readonly version="Health version: 1.4.3 - September 6, 2023"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
     printf "Display general status info & check for common system errors\n\n"
     printf "  -d,   display colorized file system disk space usage\n"
-    printf "  -i,   display colorized file systems inodes usage\n"
-    printf "  -s,   search for common file permission vulnerabilities\n"
-    printf "  -f,   report 10 largest files in specified directory tree\n"
-    printf "  -u,   report 10 largest directories by inode usage\n"
-    printf "  -m,   compare mounts to /etc/fstab\n"
-    printf "  -z,   display zombie process count, if any\n"
-    printf "  -r,   display health on remote host\n"
     printf "  -e,   parse dmesg for alerts, errors, etc. (may require sudo)\n"
+    printf "  -f,   report 10 largest files in specified directory tree\n"
+    printf "  -h,   display this help and exit\n"
+    printf "  -i,   display colorized file systems inodes usage\n"
+    printf "  -m,   compare mounts to /etc/fstab\n"
+    printf "  -r,   display health on remote host\n"
+    printf "  -s,   search for common file permission vulnerabilities\n"
+    printf "  -u,   report 10 largest directories by inode usage\n"
     printf "  -v,   display version number and exit\n"
-    printf "  -h,   display this help and exit\n\n"
+    printf "  -z,   display zombie process count, if any\n\n"
     printf "Full documentation <https://github.com/zpiatt/health>\n"
-    exit 0
 }
 
 health() {
-    local product_name sys_vendor vers mount
-
+    local product_name sys_vendor vers mount error
     printf "%bHostname:%b %s\n" "$blue" "$reset" "$( hostname )"
     product_name="$(< /sys/devices/virtual/dmi/id/product_name)"
     sys_vendor="$(< /sys/devices/virtual/dmi/id/sys_vendor)"
@@ -62,10 +60,10 @@ health() {
         findmnt "$mount" &> /dev/null || {
             printf "%b%s is declared in fstab but not mounted\n%b" "$yellow" "$mount" "$reset"
             error=true; }
-    done < <( awk '$1!~/^#/ && $2~/^[/]/ {print $2}' /etc/fstab )
+    done < <( awk '!/^#/ && $2~/^[/]/ {print $2}' /etc/fstab )
     [[ -z "$error" ]] && printf "No issues detected\n"
-    printf "%bFull File Systems:%b\n%s\n" "$blue" "$reset" "$(df -h | grep "100%" || printf "None\n")"
-    printf "%bFull Inodes:%b\n%s\n" "$blue" "$reset" "$(df -i | grep "100%" || printf "None\n")"
+    printf "%bFull File Systems:%b\n%s\n" "$blue" "$reset" "$( df -h | grep "100%" || printf "None\n" )"
+    printf "%bFull Inodes:%b\n%s\n" "$blue" "$reset" "$( df -i | grep "100%" || printf "None\n" )"
 }
 
 check_df() {
@@ -92,16 +90,11 @@ dmesg_parse() {
         readarray "$level" < <( dmesg -l "$level" )
     done
 
-    [[ -n "$emerg" ]] && \
-        printf "%bemergency messages%b: %d\n" "$red" "$reset" "${#emerg[@]}"
-    [[ -n "$crit" ]] && \
-        printf "%bcritical messages%b: %d\n" "$red" "$reset" "${#crit[@]}"
-    [[ -n "$alert" ]] && \
-        printf "%balert messages%b: %d\n" "$yellow" "$reset" "${#alert[@]}"
-    [[ -n "$err" ]] && \
-        printf "%berror messages%b: %d\n" "$yellow" "$reset" "${#err[@]}"
-    [[ -n "$warn" ]] && \
-        printf "%bwarning messages%b: %d\n" "$yellow" "$reset" "${#warn[@]}"
+    [[ -n "$emerg" ]] && printf "%bemergency messages%b: %d\n" "$red" "$reset" "${#emerg[@]}"
+    [[ -n "$crit" ]] && printf "%bcritical messages%b: %d\n" "$red" "$reset" "${#crit[@]}"
+    [[ -n "$alert" ]] && printf "%balert messages%b: %d\n" "$yellow" "$reset" "${#alert[@]}"
+    [[ -n "$err" ]] && printf "%berror messages%b: %d\n" "$yellow" "$reset" "${#err[@]}"
+    [[ -n "$warn" ]] && printf "%bwarning messages%b: %d\n" "$yellow" "$reset" "${#warn[@]}"
 }
 
 large_files() {
@@ -112,12 +105,12 @@ large_files() {
 check_mounts() {
     local mount
     while IFS= read -r mount; do
-        if ! findmnt "$mount" &> /dev/null; then
-            printf "%b%s is declared in fstab but not mounted\n%b" "$red" "$mount" "$reset"
-        else
+        if findmnt "$mount" &> /dev/null; then
             printf "%s is mounted properly\n" "$mount"
+        else
+            printf "%b%s is declared in fstab but not mounted\n%b" "$red" "$mount" "$reset" >&2
         fi
-    done < <( awk '$1!~/^#/ && $2~/^[/]/{print $2}' /etc/fstab )
+    done < <( awk '!/^#/ && $2~/^[/]/{print $2}' /etc/fstab )
 }
 
 file_vulnerability() {
@@ -141,14 +134,14 @@ get_args() {
             d) d=true ;;
             e) e=true ;;
             f) f=true ;;
-            h) usage ;;
+            h) usage; exit 0 ;;
             i) i=true ;;
             m) m=true ;;
             r) ssh -qt "$OPTARG" "bash -s" < "$0"; exit 0 ;;
             s) s=true ;;
             u) u=true ;;
             v) printf "%s\n" "$version"; exit 0 ;;
-            z) f=true ;;
+            z) z=true ;;
             ?)
                 printf "health: invalid option -- '%s'\n" "$OPTARG" >&2
                 printf "Try 'health -h' for more information.\n" >&2; exit 2
@@ -181,7 +174,7 @@ main() {
     [[ "$d" ]] && check_df "-Th"
     [[ "$e" ]] && dmesg_parse
     [[ "$f" ]] && large_files
-    [[ "$i" ]] && check_df "-i"
+    [[ "$i" ]] && check_df "-Ti"
     [[ "$m" ]] && check_mounts
     [[ "$s" ]] && file_vulnerability
     [[ "$u" ]] && inode_usage
