@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.4.3 - September 6, 2023"
+readonly version="Health version: 1.4.4 - September 24, 2023"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -40,10 +40,11 @@ usage() {
 health() {
     local product_name sys_vendor vers mount error
     printf "%bHostname:%b %s\n" "$blue" "$reset" "$( hostname )"
-    product_name="$(< /sys/devices/virtual/dmi/id/product_name)"
-    sys_vendor="$(< /sys/devices/virtual/dmi/id/sys_vendor)"
-    [[ -n "$product_name" ]] && {
-        printf "%bServer Info:%b %s, %s\n" "$blue" "$reset" "$product_name" "$sys_vendor"; }
+    if [[ -f /sys/devices/virtual/dmi/id/product_name && -f /sys/devices/virtual/dmi/id/sys_vendor ]]; then
+        product_name="$(< /sys/devices/virtual/dmi/id/product_name)"
+        sys_vendor="$(< /sys/devices/virtual/dmi/id/sys_vendor)"
+        printf "%bServer Info:%b %s, %s\n" "$blue" "$reset" "$product_name" "$sys_vendor"
+    fi
     vers="$( grep -Po "(?<=PRETTY_NAME=\").*[^\"]" /etc/os-release 2> /dev/null )"
     [[ -n "$vers" ]] && printf "%bLinux Version:%b %s\n" "$blue" "$reset" "$vers"
     printf "%bKernel Version:%b %s\n" "$blue" "$reset" "$( uname -r )"
@@ -56,7 +57,7 @@ health() {
         "$( ps -eo pcpu,comm,pid --sort=-pcpu | head -n 6 )"
     printf "%bMounts:%b\n" "$blue" "$reset"
     timeout 2 df &> /dev/null || { printf "%bHung mount detected.%b\n" "$yellow" "$reset" >&2; return 1; }
-    while IFS= read -r mount; do
+    while read -r mount; do
         findmnt "$mount" &> /dev/null || {
             printf "%b%s is declared in fstab but not mounted\n%b" "$yellow" "$mount" "$reset"
             error=true; }
@@ -70,7 +71,7 @@ check_df() {
     local line
     timeout 2 df &> /dev/null || { printf "%bHung mount detected.%b\n" "$yellow" "$reset" >&2; return 1; }
     printf "%bDisk Usage:%b\n" "$blue" "$reset"
-    while IFS= read -r line; do
+    while read -r line; do
         case "$line" in
             *100%*) printf "%b%s%b\n" "$red" "$line" "$reset" ;;
             *9?%*) printf "%b%s%b\n" "$yellow" "$line" "$reset" ;;
@@ -83,7 +84,7 @@ dmesg_parse() {
     local dmesg_levels level emerg crit alert err warn
     dmesg -V &> /dev/null || {
         printf "health: dmesg version/permissions insufficient"
-        printf "Try 'health -h' for more information.\n"; exit 1; }
+        printf "Try 'health -h' for more information.\n"; return 1; }
 
     dmesg_levels=(emerg crit alert err warn)
     for level in "${dmesg_levels[@]}"; do
@@ -104,7 +105,7 @@ large_files() {
 
 check_mounts() {
     local mount
-    while IFS= read -r mount; do
+    while read -r mount; do
         if findmnt "$mount" &> /dev/null; then
             printf "%s is mounted properly\n" "$mount"
         else
