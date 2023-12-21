@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Health: A command-line system check tool written in bash 3.2+.
+# Health: A command-line RHEL system check tool written in bash 3.2+.
 # https://github.com/zpiatt/health
 #
 # Copyright (C) 2023 Zac Piatt
@@ -18,16 +18,17 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.4.5 - December 20, 2023"
+readonly version="Health version: 1.5.0 - December 21, 2023"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
-    printf "Display general status info & check for common system errors\n\n"
+    printf "Display general RHEL server statuses & check for common system errors\n\n"
     printf "  -d,   display colorized file system disk space usage\n"
     printf "  -e,   parse dmesg for alerts, errors, etc. (may require sudo)\n"
     printf "  -f,   report 10 largest files in specified directory tree\n"
     printf "  -h,   display this help and exit\n"
     printf "  -i,   display colorized file systems inodes usage\n"
+    printf "  -k,   display kernel information; check for updates\n"
     printf "  -m,   compare mounts to /etc/fstab\n"
     printf "  -r,   display health on remote host\n"
     printf "  -s,   search for common file permission vulnerabilities\n"
@@ -38,16 +39,14 @@ usage() {
 }
 
 health() {
-    local product_name sys_vendor vers mount error
+    local mount error
     printf "%bHostname:%b %s\n" "$blue" "$reset" "$(hostname)"
     printf "%bIP(s):%b %s\n" "$blue" "$reset" "$(hostname -I)"
     if [[ -f /sys/devices/virtual/dmi/id/product_name && -f /sys/devices/virtual/dmi/id/sys_vendor ]]; then
-        product_name="$(< /sys/devices/virtual/dmi/id/product_name)"
-        sys_vendor="$(< /sys/devices/virtual/dmi/id/sys_vendor)"
-        printf "%bServer Info:%b %s, %s\n" "$blue" "$reset" "$product_name" "$sys_vendor"
+        printf "%bServer Info:%b %s, %s\n" "$blue" "$reset" \
+        "$(< /sys/devices/virtual/dmi/id/product_name)" "$(< /sys/devices/virtual/dmi/id/sys_vendor)"
     fi
-    vers="$(grep -Po "(?<=PRETTY_NAME=\").*[^\"]" /etc/os-release 2> /dev/null)"
-    [[ -n "$vers" ]] && printf "%bLinux Version:%b %s\n" "$blue" "$reset" "$vers"
+    [[ -n /etc/redhat-release ]] && printf "%bLinux Version:%b %s\n" "$blue" "$reset" "$(< /etc/redhat-release)"
     printf "%bKernel Version:%b %s\n" "$blue" "$reset" "$(awk '{print $3}' /proc/version)"
     printf "%bUptime:%b %s\n" "$blue" "$reset" "$(uptime)"
     printf "%bUsers Currently Logged in:%b\n%s\n" "$blue" "$reset" "$(who -u)"
@@ -104,6 +103,40 @@ large_files() {
     find "$dir" -xdev -type f -print0 | xargs -0 du -Sh | sort -rn | head
 }
 
+check_kernel() {
+    local current_kernel latest_kernel available_kernel no_subscription
+    current_kernel=$(awk '{print $3}' /proc/version)
+    latest_kernel=$(rpm -q --last kernel | sed -n '1s/kernel-//;1s/ .*$//p')
+    [[ "$latest_kernel" == "$current_kernel" ]] && unset latest_kernel
+    available_kernel=$(yum list updates kernel 2>&1)
+    if [[ "$available_kernel" =~ Error ]]; then
+        unset available_kernel
+        no_subscription=true
+    else
+        available_kernel=$(echo "$available_kernel" | awk '/kernel/{print $2}')
+    fi
+
+    printf "%bKernel version: %b" "$blue" "$reset"
+    if [[ -n "$available_kernel" || -n "$latest_kernel" ]]; then
+        printf "(%bpending kernel updates%b)\n" "$red" "$reset"
+        if [[ -n "$available_kernel" ]]; then
+            printf "  Current running kernel: \t%s\n" "${current_kernel//.x86_64/}"
+            printf "  Available (yum update): \t%s\n" "${available_kernel//.x86_64/}"
+        else
+            printf "  Current running kernel: \t%s\n" "${current_kernel//.x86_64/}"
+            printf "  Latest installed kernel: \t%s\n" "${latest_kernel//.x86_64/}"
+        fi
+    else
+        if [[ "$no_subscription" ]]; then
+            printf "(%bno repos, check subscription-manager%b)\n" "$yellow" "$reset"
+            printf "  Current running kernel: \t%s\n" "${current_kernel//.x86_64/}"
+        else
+            printf "(%bup-to-date%b)\n" "$green" "$reset"
+            printf "  Current running kernel: \t%s\n" "${current_kernel//.x86_64/}"
+        fi
+    fi
+}
+
 check_mounts() {
     local mount
     while read -r mount; do
@@ -123,21 +156,20 @@ file_vulnerability() {
     [[ -n "$setbits" ]] && printf "%bFiles with setgids/setuids:%b\n%s\n" "$blue" "$reset" "$setbits"
 }
 
-inode_usage() { find "$dir" -xdev -printf '%h\n' | sort | uniq -c | sort -rn | head; }
-
 zombies() {
     printf "%bZombie Process Count: %b" "$blue" "$reset"
     ps axo stat | awk 'BEGIN{i=0}/Z/{i++;}END{print i}'
 }
 
 get_args() {
-    while getopts ':defhimr:suvz' option; do
+    while getopts ':defhikmr:suvz' option; do
         case "$option" in
             d) d=true ;;
             e) e=true ;;
             f) f=true ;;
             h) usage; exit 0 ;;
             i) i=true ;;
+            k) k=true ;;
             m) m=true ;;
             r) ssh -qt "$OPTARG" "bash -s" < "$0"; exit 0 ;;
             s) s=true ;;
@@ -162,6 +194,7 @@ get_args() {
 }
 
 main() {
+    green='\033[38;5;46m'
     yellow='\033[38;5;226m'
     blue='\033[38;5;33m'
     red='\033[38;5;160m'
@@ -177,9 +210,10 @@ main() {
     [[ "$e" ]] && dmesg_parse
     [[ "$f" ]] && large_files
     [[ "$i" ]] && check_df "-Ti"
+    [[ "$k" ]] && check_kernel
     [[ "$m" ]] && check_mounts
     [[ "$s" ]] && file_vulnerability
-    [[ "$u" ]] && inode_usage
+    [[ "$u" ]] && find "$dir" -xdev -printf '%h\n' | sort | uniq -c | sort -rn | head
     [[ "$z" ]] && zombies
 
     return 0
