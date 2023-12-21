@@ -22,7 +22,7 @@ readonly version="Health version: 1.5.0 - December 21, 2023"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
-    printf "Display general RHEL server statuses & check for common system errors\n\n"
+    printf "Display general system statisics and check for common errors.\n\n"
     printf "  -d,   display colorized file system disk space usage\n"
     printf "  -e,   parse dmesg for alerts, errors, etc. (may require sudo)\n"
     printf "  -f,   report 10 largest files in specified directory tree\n"
