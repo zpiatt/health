@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.5.1 - December 21, 2023"
+readonly version="Health version: 1.5.2 - December 22, 2023"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -103,40 +103,31 @@ large_files() {
 }
 
 check_kernel() {
-    local current_kernel latest_kernel available_kernel no_subscription
+    local current_kernel latest_kernel available_kernel
     current_kernel=$(awk '{print $3}' /proc/version)
     latest_kernel=$(rpm -q --last kernel | sed -n '1s/kernel-//;1s/ .*$//p')
-    [[ "$latest_kernel" == "$current_kernel" ]] && unset latest_kernel
     available_kernel=$(yum list updates kernel 2>&1)
+
+    printf "%bKernel version: %b" "$blue" "$reset"
 
     if [[ -n "$available_kernel" ]]; then
         if [[ "$available_kernel" =~ "No matching Packages to list" ]]; then
-            unset available_kernel
+            printf "(%bup-to-date%b)\n" "$green" "$reset"
         elif [[ "$available_kernel" =~ "Error" ]]; then
-            unset available_kernel
-            no_subscription=true
+            printf "(%bcheck subscription-manager%b)\n" "$yellow" "$reset"
         else
             available_kernel=$(echo "$available_kernel" | awk '/kernel/{print $2}')
+            printf "(%bpending kernel updates%b)\n" "$yellow" "$reset"
+            printf "  Available (yum update): \t%s\n" "${available_kernel//.x86_64/}"
         fi
+    elif [[ "$latest_kernel" != "$current_kernel" ]]; then
+        printf "(%bpending kernel updates%b)\n" "$yellow" "$reset"
+        printf "  Latest installed kernel: \t%s\n" "${latest_kernel//.x86_64/}"
+    else
+        printf "(%bup-to-date%b)\n" "$green" "$reset"
     fi
 
-    printf "%bKernel version: %b" "$blue" "$reset"
-    if [[ -n "$available_kernel" || -n "$latest_kernel" ]]; then
-        printf "(%bpending kernel updates%b)\n" "$red" "$reset"
-        printf "  Current running kernel: \t%s\n" "${current_kernel//.x86_64/}"
-        if [[ -n "$available_kernel" ]]; then
-            printf "  Available (yum update): \t%s\n" "${available_kernel//.x86_64/}"
-        else
-            printf "  Latest installed kernel: \t%s\n" "${latest_kernel//.x86_64/}"
-        fi
-    else
-        if [[ "$no_subscription" ]]; then
-            printf "(%bno repos, check subscription-manager%b)\n" "$yellow" "$reset"
-        else
-            printf "(%bup-to-date%b)\n" "$green" "$reset"
-        fi
-        printf "  Current running kernel: \t%s\n" "${current_kernel//.x86_64/}"
-    fi
+    printf "  Current running kernel: \t%s\n" "${current_kernel//.x86_64/}"
 }
 
 check_mounts() {
