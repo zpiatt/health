@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.5.2 - December 22, 2023"
+readonly version="Health version: 1.6.1 - January 12, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -30,6 +30,7 @@ usage() {
     printf "  -i,   display colorized file systems inodes usage\n"
     printf "  -k,   display kernel information; check for updates\n"
     printf "  -m,   compare mounts to /etc/fstab\n"
+    printf "  -n,   display basic network details\n"
     printf "  -r,   display health on remote host\n"
     printf "  -s,   search for common file permission vulnerabilities\n"
     printf "  -u,   report 10 largest directories by inode usage\n"
@@ -41,7 +42,7 @@ usage() {
 health() {
     local mount error
     printf "%bHostname:%b %s\n" "$blue" "$reset" "$(hostname)"
-    printf "%bIP(s):%b %s\n" "$blue" "$reset" "$(hostname -I)"
+    get_network_info
     if [[ -f /sys/devices/virtual/dmi/id/product_name && -f /sys/devices/virtual/dmi/id/sys_vendor ]]; then
         printf "%bServer Info:%b %s, %s\n" "$blue" "$reset" \
         "$(< /sys/devices/virtual/dmi/id/product_name)" "$(< /sys/devices/virtual/dmi/id/sys_vendor)"
@@ -83,8 +84,8 @@ check_df() {
 dmesg_parse() {
     local level emerg crit alert err warn
     dmesg -V &> /dev/null || {
-        printf "health: dmesg version insufficient"
-        printf "Try 'health -h' for more information.\n"; return 1; }
+        printf "health: dmesg version insufficient\n" >&2
+        printf "Try 'health -h' for more information.\n" >&2; return 1; }
 
     for level in emerg crit alert err warn; do
         readarray -t "$level" < <(dmesg -l "$level")
@@ -141,6 +142,35 @@ check_mounts() {
     done < <(awk '!/^#/ && $2~/^[/]/{print $2}' /etc/fstab)
 }
 
+get_network_info() {
+    local network_info gateway interface ip
+    network_info=$(ip route 2>/dev/null)
+    if [[ -n "$network_info" ]]; then
+        printf "%bNetwork Info:%b\n" "$blue" "$reset"
+        printf "  Interface(s):\n"
+        while read -r interface ip; do
+            printf "\t%s - %s\n" "$interface" "$ip"
+        done < <(echo "$network_info" | awk '/src/{print $3, $9}')
+        gateway=$(echo "$network_info" | awk '/default/{print $3}')
+        if ping -c 1 "$gateway" &> /dev/null; then
+            printf "  Default gateway: %s - (%breachable%b)\n" "$gateway" "$green" "$reset"
+        else
+            printf "  Default gateway: %s - (%bunreachable%b)\n" "$gateway" "$yellow" "$reset"
+        fi
+    fi
+    dns_info=$(awk '/^nameserver/{print $2}' /etc/resolv.conf 2>/dev/null)
+    if [[ -n "$dns_info" ]]; then
+        printf "  DNS nameserver(s):\n"
+        while read -r dns; do
+            if ping -c 1 "$dns" &> /dev/null; then
+                printf "\t%s (%breachable%b)\n" "$dns" "$green" "$reset"
+            else
+                printf "\t%s (%bpotential DNS error%b)\n" "$dns" "$yellow" "$reset"
+            fi
+        done <<< "$dns_info"
+    fi
+}
+
 file_vulnerability() {
     local world_write setbits
     world_write="$(find "$dir" ! -type l -perm -002)"
@@ -155,7 +185,7 @@ zombies() {
 }
 
 get_args() {
-    while getopts ':defhikmr:suvz' option; do
+    while getopts ':defhikmnr:suvz' option; do
         case "$option" in
             d) d=true ;;
             e) e=true ;;
@@ -164,6 +194,7 @@ get_args() {
             i) i=true ;;
             k) k=true ;;
             m) m=true ;;
+            n) n=true ;;
             r) ssh -qt "$OPTARG" "bash -s" < "$0"; exit 0 ;;
             s) s=true ;;
             u) u=true ;;
@@ -187,6 +218,7 @@ get_args() {
 }
 
 main() {
+    PATH="${PATH}:/usr/sbin:/sbin"
     green='\033[38;5;46m'
     yellow='\033[38;5;226m'
     blue='\033[38;5;33m'
@@ -205,6 +237,7 @@ main() {
     [[ "$i" ]] && check_df "-Ti"
     [[ "$k" ]] && check_kernel
     [[ "$m" ]] && check_mounts
+    [[ "$n" ]] && get_network_info
     [[ "$s" ]] && file_vulnerability
     [[ "$u" ]] && find "$dir" -xdev -printf '%h\n' | sort | uniq -c | sort -rn | head
     [[ "$z" ]] && zombies
