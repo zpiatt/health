@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.6.1 - January 12, 2024"
+readonly version="Health version: 1.6.2 - January 14, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -104,28 +104,30 @@ large_files() {
 }
 
 check_kernel() {
-    local current_kernel latest_kernel available_kernel
+    local current_kernel latest_kernel check_yum available_kernel
     current_kernel=$(awk '{print $3}' /proc/version)
     latest_kernel=$(rpm -q --last kernel | sed -n '1s/kernel-//;1s/ .*$//p')
-    available_kernel=$(yum list updates kernel 2>&1)
+    check_yum=$(yum list updates kernel 2>&1)
 
     printf "%bKernel version: %b" "$blue" "$reset"
 
-    if [[ -n "$available_kernel" ]]; then
-        if [[ "$available_kernel" =~ "No matching Packages to list" ]]; then
-            printf "(%bup-to-date%b)\n" "$green" "$reset"
-        elif [[ "$available_kernel" =~ "Error" ]]; then
-            printf "(%bcheck subscription-manager%b)\n" "$yellow" "$reset"
+    if [[ "$check_yum" =~ "No matching Packages to list" ]]; then
+        if [[ "$latest_kernel" != "$current_kernel" ]]; then
+            printf "(%bpending kernel updates%b)\n" "$yellow" "$reset"
+            printf "  Latest installed kernel: \t%s\n" "${latest_kernel//.x86_64/}"
         else
-            available_kernel=$(echo "$available_kernel" | awk '/kernel/{print $2}')
+            printf "(%bup-to-date%b)\n" "$green" "$reset"
+        fi
+    elif [[ "$check_yum" =~ "Error" ]]; then
+        printf "(%bcheck subscription-manager%b)\n" "$yellow" "$reset"
+    else
+        available_kernel=$(echo "$check_yum" | awk '/kernel/{print $2}')
+        if [[ -n "$available_kernel" ]]; then
             printf "(%bpending kernel updates%b)\n" "$yellow" "$reset"
             printf "  Available (yum update): \t%s\n" "${available_kernel//.x86_64/}"
+        else
+            printf "(%bup-to-date%b)\n" "$green" "$reset"
         fi
-    elif [[ "$latest_kernel" != "$current_kernel" ]]; then
-        printf "(%bpending kernel updates%b)\n" "$yellow" "$reset"
-        printf "  Latest installed kernel: \t%s\n" "${latest_kernel//.x86_64/}"
-    else
-        printf "(%bup-to-date%b)\n" "$green" "$reset"
     fi
 
     printf "  Current running kernel: \t%s\n" "${current_kernel//.x86_64/}"
