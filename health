@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.6.2 - January 14, 2024"
+readonly version="Health version: 1.6.3 - January 15, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -109,28 +109,26 @@ check_kernel() {
     latest_kernel=$(rpm -q --last kernel | sed -n '1s/kernel-//;1s/ .*$//p')
     check_yum=$(yum list updates kernel 2>&1)
 
-    printf "%bKernel version: %b" "$blue" "$reset"
-
-    if [[ "$check_yum" =~ "No matching Packages to list" ]]; then
-        if [[ "$latest_kernel" != "$current_kernel" ]]; then
-            printf "(%bpending kernel updates%b)\n" "$yellow" "$reset"
-            printf "  Latest installed kernel: \t%s\n" "${latest_kernel//.x86_64/}"
+    if [[ "$check_yum" =~ "Error" ]]; then
+        if [[ "$check_yum" =~ "No matching Packages to list" ]]; then
+            if [[ "$latest_kernel" == "$current_kernel" ]]; then
+                printf "%bKernel version:%b (%bup-to-date%b)\n" "$blue" "$reset" "$green" "$reset"
+            else
+                printf "%bKernel version:%b (%bpending kernel updates%b)\n" "$blue" "$reset" "$yellow" "$reset"
+                printf "  Latest installed kernel: \t%s\n" "$latest_kernel"
+            fi
         else
-            printf "(%bup-to-date%b)\n" "$green" "$reset"
+            printf "%s\n" "$check_yum" >&2; return 1
         fi
-    elif [[ "$check_yum" =~ "Error" ]]; then
-        printf "(%bcheck subscription-manager%b)\n" "$yellow" "$reset"
     else
         available_kernel=$(echo "$check_yum" | awk '/kernel/{print $2}')
         if [[ -n "$available_kernel" ]]; then
-            printf "(%bpending kernel updates%b)\n" "$yellow" "$reset"
-            printf "  Available (yum update): \t%s\n" "${available_kernel//.x86_64/}"
-        else
-            printf "(%bup-to-date%b)\n" "$green" "$reset"
+            printf "%bKernel version:%b (%bpending kernel updates%b)\n" "$blue" "$reset" "$yellow" "$reset"
+            printf "  Available (yum update): \t%s\n" "$available_kernel"
         fi
     fi
 
-    printf "  Current running kernel: \t%s\n" "${current_kernel//.x86_64/}"
+    printf "  Current running kernel: \t%s\n" "$current_kernel"
 }
 
 check_mounts() {
