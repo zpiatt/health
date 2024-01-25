@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.6.3 - January 15, 2024"
+readonly version="Health version: 1.6.4 - January 25, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -152,10 +152,15 @@ get_network_info() {
             printf "\t%s - %s\n" "$interface" "$ip"
         done < <(echo "$network_info" | awk '/src/{print $3, $9}')
         gateway=$(echo "$network_info" | awk '/default/{print $3}')
-        if ping -c 1 "$gateway" &> /dev/null; then
-            printf "  Default gateway: %s - (%breachable%b)\n" "$gateway" "$green" "$reset"
-        else
-            printf "  Default gateway: %s - (%bunreachable%b)\n" "$gateway" "$yellow" "$reset"
+        if [[ -n "$gateway" ]]; then
+            printf "  Default gateway(s):\n"
+            while read -r gateway; do
+                if ping -c 1 "$gateway" &> /dev/null; then
+                    printf "\t%s (%breachable%b)\n" "$gateway" "$green" "$reset"
+                else
+                    printf "\t%s (%bunreachable%b)\n" "$gateway" "$yellow" "$reset"
+                fi
+            done <<< "$gateway"
         fi
     fi
     dns_info=$(awk '/^nameserver/{print $2}' /etc/resolv.conf 2>/dev/null)
