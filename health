@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.6.5 - January 27, 2024"
+readonly version="Health version: 1.6.6 - February 16, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -173,6 +173,7 @@ zombies() {
 }
 
 get_args() {
+    local option
     while getopts ':defhikmnr:suvz' option; do
         case "$option" in
             d|e|f|i|k|m|n|s|u|z) args_array+=("$option") ;;
@@ -197,7 +198,6 @@ get_args() {
 }
 
 main() {
-    PATH="${PATH}:/usr/sbin:/sbin"
     green='\033[38;5;46m'
     yellow='\033[38;5;226m'
     blue='\033[38;5;33m'
