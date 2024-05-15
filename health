@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.6.6 - February 16, 2024"
+readonly version="Health version: 1.6.7 - May 15, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -98,24 +98,20 @@ check_kernel() {
     current_kernel=$(awk '{print $3}' /proc/version)
     latest_kernel=$(rpm -q --last kernel | sed -n '1s/kernel-//;1s/ .*$//p')
     check_yum=$(yum list updates kernel 2>&1)
+    available_kernel=$(echo "$check_yum" | awk '/kernel/{print $2}')
 
-    if [[ "$check_yum" =~ "Error" ]]; then
-        if [[ "$check_yum" =~ "No matching Packages to list" ]]; then
-            if [[ "$latest_kernel" == "$current_kernel" ]]; then
-                printf "%bKernel version:%b (%bup-to-date%b)\n" "$blue" "$reset" "$green" "$reset"
-            else
-                printf "%bKernel version:%b (%bpending kernel updates%b)\n" "$blue" "$reset" "$yellow" "$reset"
-                printf "  Latest installed kernel: \t%s\n" "$latest_kernel"
-            fi
+    if [[ -n "$available_kernel" ]]; then
+        printf "%bKernel version:%b (%bpending kernel updates%b)\n" "$blue" "$reset" "$yellow" "$reset"
+        printf "  Available (yum update): \t%s\n" "$available_kernel"
+    elif [[ "$check_yum" =~ "No matching Packages to list" ]]; then
+        if [[ "$latest_kernel" == "$current_kernel" ]]; then
+            printf "%bKernel version:%b (%bup-to-date%b)\n" "$blue" "$reset" "$green" "$reset"
         else
-            printf "%s\n" "$check_yum" >&2; return 1
+            printf "%bKernel version:%b (%bpending kernel updates%b)\n" "$blue" "$reset" "$yellow" "$reset"
+            printf "  Latest installed kernel: \t%s\n" "$latest_kernel"
         fi
     else
-        available_kernel=$(echo "$check_yum" | awk '/kernel/{print $2}')
-        if [[ -n "$available_kernel" ]]; then
-            printf "%bKernel version:%b (%bpending kernel updates%b)\n" "$blue" "$reset" "$yellow" "$reset"
-            printf "  Available (yum update): \t%s\n" "$available_kernel"
-        fi
+        printf "%s\n" "$check_yum" >&2; return 1
     fi
     printf "  Current running kernel: \t%s\n" "$current_kernel"
 }
@@ -135,28 +131,36 @@ check_mounts() {
 }
 
 get_network_info() {
-    local interface ip gateway dns
+    local interface ip gateway dns nfs_server
     printf "%bNetwork Info:%b\n" "$blue" "$reset"
-    printf "  Interface(s):\n"
+    printf "Interface(s):\n"
     while read -r interface ip; do
-        printf "\t%s - %s\n" "$interface" "$ip"
+        printf "  %s - %s\n" "$interface" "$ip"
     done < <(ip route 2> /dev/null | awk '/src/{print $3, $9}')
-    printf "  Default gateway(s):\n"
+    printf "Default gateway(s):\n"
     while read -r gateway; do
         if ping -W1 -c1 "$gateway" &> /dev/null; then
-            printf "\t%s (%breachable%b)\n" "$gateway" "$green" "$reset"
+            printf "  %s (%breachable%b)\n" "$gateway" "$green" "$reset"
         else
-            printf "\t%s (%bunreachable%b)\n" "$gateway" "$yellow" "$reset"
+            printf "  %s (%bunreachable%b)\n" "$gateway" "$yellow" "$reset"
         fi
     done < <(ip route 2> /dev/null | awk '/default/{print $3}')
-    printf "  DNS nameserver(s):\n"
+    printf "DNS nameserver(s):\n"
     while read -r dns; do
         if ping -W1 -c1 "$dns" &> /dev/null; then
-            printf "\t%s (%breachable%b)\n" "$dns" "$green" "$reset"
+            printf "  %s (%breachable%b)\n" "$dns" "$green" "$reset"
         else
-            printf "\t%s (%bpotential DNS error%b)\n" "$dns" "$yellow" "$reset"
+            printf "  %s (%bpotential DNS error%b)\n" "$dns" "$yellow" "$reset"
         fi
     done < <(awk '/^nameserver/{print $2}' /etc/resolv.conf 2> /dev/null)
+    printf "NFS server(s):\n"
+    while read -r nfs_server; do
+        if showmount -e "$nfs_server" &> /dev/null; then
+            printf "  %s (%breachable%b)\n" "$nfs_server" "$green" "$reset"
+        else
+            printf "  %s (%bpotential NFS error%b)\n" "$nfs_server" "$yellow" "$reset"
+        fi
+    done < <(awk -F: '!/^#/&&/nfs/{print $1}' /etc/fstab 2> /dev/null)
 }
 
 file_vulnerability() {
@@ -204,7 +208,11 @@ main() {
     red='\033[38;5;160m'
     reset='\033[0m'
 
-    [[ "$#" -eq 0 ]] && { health; exit 0; } || get_args "$@"
+    if [[ "$#" -eq 0 ]]; then
+        health; exit 0
+    else
+        get_args "$@"
+    fi
 
     for arg in "${args_array[@]}"; do
         [[ "$arg" == "d" ]] && check_df "-Th"
