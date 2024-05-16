@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.6.7 - May 15, 2024"
+readonly version="Health version: 1.6.8 - May 16, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -155,7 +155,7 @@ get_network_info() {
     done < <(awk '/^nameserver/{print $2}' /etc/resolv.conf 2> /dev/null)
     printf "NFS server(s):\n"
     while read -r nfs_server; do
-        if showmount -e "$nfs_server" &> /dev/null; then
+        if timeout 1 showmount -e "$nfs_server" &> /dev/null; then
             printf "  %s (%breachable%b)\n" "$nfs_server" "$green" "$reset"
         else
             printf "  %s (%bpotential NFS error%b)\n" "$nfs_server" "$yellow" "$reset"
