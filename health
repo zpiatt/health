@@ -3,7 +3,7 @@
 # Health: A command-line RHEL system check tool written in bash 3.2+.
 # https://github.com/zpiatt/health
 #
-# Copyright (C) 2023 Zac Piatt
+# Copyright (C) 2024 Zac Piatt
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.6.8 - May 16, 2024"
+readonly version="Health version: 1.6.9 - May 26, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -60,6 +60,7 @@ health() {
 
 check_df() {
     local line
+
     timeout 2 df &> /dev/null || { printf "%bHung mount detected.%b\n" "$yellow" "$reset" >&2; return 1; }
     printf "%bDisk Usage:%b\n" "$blue" "$reset"
     while read -r line; do
@@ -73,6 +74,7 @@ check_df() {
 
 dmesg_parse() {
     local level emerg crit alert err warn
+
     dmesg -V &> /dev/null || {
         printf "health: dmesg version insufficient\n" >&2
         printf "Try 'health -h' for more information.\n" >&2; return 1; }
@@ -95,8 +97,8 @@ large_files() {
 
 check_kernel() {
     local current_kernel latest_kernel check_yum available_kernel
+
     current_kernel=$(awk '{print $3}' /proc/version)
-    latest_kernel=$(rpm -q --last kernel | sed -n '1s/kernel-//;1s/ .*$//p')
     check_yum=$(yum list updates kernel 2>&1)
     available_kernel=$(echo "$check_yum" | awk '/kernel/{print $2}')
 
@@ -104,6 +106,7 @@ check_kernel() {
         printf "%bKernel version:%b (%bpending kernel updates%b)\n" "$blue" "$reset" "$yellow" "$reset"
         printf "  Available (yum update): \t%s\n" "$available_kernel"
     elif [[ "$check_yum" =~ "No matching Packages to list" ]]; then
+        latest_kernel=$(rpm -q --last kernel | sed -n '1s/kernel-//;1s/ .*$//p')
         if [[ "$latest_kernel" == "$current_kernel" ]]; then
             printf "%bKernel version:%b (%bup-to-date%b)\n" "$blue" "$reset" "$green" "$reset"
         else
@@ -113,30 +116,44 @@ check_kernel() {
     else
         printf "%s\n" "$check_yum" >&2; return 1
     fi
+
     printf "  Current running kernel: \t%s\n" "$current_kernel"
 }
 
 check_mounts() {
-    local mount error
+    local mount error nfs_server
+
     printf "%bMounts:%b\n" "$blue" "$reset"
     timeout 2 df &> /dev/null || { printf "%bHung mount detected.%b\n" "$yellow" "$reset" >&2; return 1; }
+
     while read -r mount; do
         findmnt "$mount" &> /dev/null || {
             printf "%b%s is declared in fstab but not mounted\n%b" "$yellow" "$mount" "$reset"
             error=true; }
     done < <(awk '!/^#/ && $2~/^[/]/ {print $2}' /etc/fstab)
+
+    while read -r nfs_server; do
+        timeout 1 showmount "$nfs_server" &> /dev/null || {
+            printf "  %s (%bpotential NFS error%b)\n" "$nfs_server" "$yellow" "$reset"
+            error=true; }
+    done < <(awk -F: '!/^#/&&/nfs/{print $1}' /etc/fstab 2> /dev/null)
+
     [[ -z "$error" ]] && printf "No issues detected\n"
+
     printf "%bFull File Systems:%b\n%s\n" "$blue" "$reset" "$(df -h | grep "100%" || printf "None\n")"
     printf "%bFull Inodes:%b\n%s\n" "$blue" "$reset" "$(df -i | grep "100%" || printf "None\n")"
 }
 
 get_network_info() {
-    local interface ip gateway dns nfs_server
+    local interface ip gateway dns dns_servers nfs_server
+
     printf "%bNetwork Info:%b\n" "$blue" "$reset"
+
     printf "Interface(s):\n"
     while read -r interface ip; do
         printf "  %s - %s\n" "$interface" "$ip"
     done < <(ip route 2> /dev/null | awk '/src/{print $3, $9}')
+    
     printf "Default gateway(s):\n"
     while read -r gateway; do
         if ping -W1 -c1 "$gateway" &> /dev/null; then
@@ -145,29 +162,35 @@ get_network_info() {
             printf "  %s (%bunreachable%b)\n" "$gateway" "$yellow" "$reset"
         fi
     done < <(ip route 2> /dev/null | awk '/default/{print $3}')
+
     printf "DNS nameserver(s):\n"
-    while read -r dns; do
+    if [[ -f /etc/systemd/resolved.conf ]]; then
+        readarray -t dns_servers < <(awk -F= '/^DNS=/ {print $2}' /etc/systemd/resolved.conf | xargs -n1)
+    else
+        readarray -t dns_servers < <(awk '/^nameserver/ {print $2}' /etc/resolv.conf)
+    fi
+
+    for dns in "${dns_servers[@]}"; do
         if ping -W1 -c1 "$dns" &> /dev/null; then
             printf "  %s (%breachable%b)\n" "$dns" "$green" "$reset"
         else
             printf "  %s (%bpotential DNS error%b)\n" "$dns" "$yellow" "$reset"
         fi
-    done < <(awk '/^nameserver/{print $2}' /etc/resolv.conf 2> /dev/null)
+    done
+
     printf "NFS server(s):\n"
     while read -r nfs_server; do
-        if timeout 1 showmount -e "$nfs_server" &> /dev/null; then
-            printf "  %s (%breachable%b)\n" "$nfs_server" "$green" "$reset"
-        else
-            printf "  %s (%bpotential NFS error%b)\n" "$nfs_server" "$yellow" "$reset"
-        fi
+        printf "  %s\n" "$nfs_server"
     done < <(awk -F: '!/^#/&&/nfs/{print $1}' /etc/fstab 2> /dev/null)
 }
 
 file_vulnerability() {
     local world_write setbits
+
     world_write="$(find "$dir" ! -type l -perm -002)"
-    [[ -n "$world_write" ]] && printf "%bWorld writable files:%b\n%s\n" "$blue" "$reset" "$world_write"
     setbits="$(find "$dir" -perm -4000 -o -perm -2000)"
+
+    [[ -n "$world_write" ]] && printf "%bWorld writable files:%b\n%s\n" "$blue" "$reset" "$world_write"
     [[ -n "$setbits" ]] && printf "%bFiles with setgids/setuids:%b\n%s\n" "$blue" "$reset" "$setbits"
 }
 
@@ -178,6 +201,7 @@ zombies() {
 
 get_args() {
     local option
+
     while getopts ':defhikmnr:suvz' option; do
         case "$option" in
             d|e|f|i|k|m|n|s|u|z) args_array+=("$option") ;;
