@@ -6,8 +6,9 @@
 Health is a command-line system status check tool written in `bash 3.2+`. Designed for Red Hat Enterprise Linux (RHEL) environments, Health provides an easy way to display general system statistics, scrutinize file systems for common errors, and check for a variety of other typical system issues.
 
 ### Status Update:
-  - Focus on RedHat Enterprise Linux: The script is now focused on RHEL version 7+. I work in a RedHat environment, and maintaining a script for all OS versions became too cumbersome. Please fork this project to adapt it to other operating systems. I'm willing to assist with specific customization questions, but the script will focus on RHEL 7+ henceforth.
-  - __NOTE__: RHEL 6 ELS (Extended Life-cycle Support) ends 30JUNE2024. Though most of `health` *should* continue to work, I will no longer be testing it on RHEL 6, nor making specific updates to maintain support.
+  - __Focus on RedHat Enterprise Linux__: The script is now focused on RHEL version 7+. I work in a RedHat environment, and maintaining a script for all OS versions became too cumbersome.
+  - Please fork this project to adapt it to other operating systems. I'm willing to assist with specific customization questions, but the script will focus on RHEL 7+ henceforth.
+  - __NOTE__: RHEL 6 ELS (Extended Life-cycle Support) ends 30JUNE2024. Most of `health` *should* continue to work, however, I will not make updates specifically maintain support for RHEL 6.
 
 ### Recently added:
   - Show all users with open files ( `-o` option ):
