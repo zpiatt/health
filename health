@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.6.9 - May 26, 2024"
+readonly version="Health version: 1.7.0 - May 27, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -31,10 +31,12 @@ usage() {
     printf "  -k,   display kernel information; check for updates\n"
     printf "  -m,   check mounts for common errors\n"
     printf "  -n,   display basic network details\n"
+    printf "  -o,   show users with open files (may require sudo)\n"
     printf "  -r,   display health on remote host\n"
     printf "  -s,   search for common file permission vulnerabilities\n"
     printf "  -u,   report 10 largest directories by inode usage\n"
     printf "  -v,   display version number and exit\n"
+    printf "  -w,   show passwd info for specified user\n"
     printf "  -z,   display zombie process count, if any\n\n"
     printf "Full documentation <https://github.com/zpiatt/health>\n"
 }
@@ -49,7 +51,7 @@ health() {
     [[ -f /etc/redhat-release ]] && printf "%bLinux Version:%b %s\n" "$blue" "$reset" "$(< /etc/redhat-release)"
     printf "%bKernel Version:%b %s\n" "$blue" "$reset" "$(awk '{print $3}' /proc/version)"
     printf "%bUptime:%b %s\n" "$blue" "$reset" "$(uptime)"
-    printf "%bUsers Currently Logged in:%b\n%s\n" "$blue" "$reset" "$(who -u)"
+    printf "%bUsers Currently Logged in:%b\n" "$blue" "$reset"; whotf
     printf "%bMemory Usage:%b\n%s\n" "$blue" "$reset" "$(free -h)"
     printf "%bTop 5 Processes by Memory:%b\n%s\n" "$blue" "$reset" \
         "$(ps -eo %mem,comm,pid --sort=-%mem | head -n 6)"
@@ -184,6 +186,19 @@ get_network_info() {
     done < <(awk -F: '!/^#/&&/nfs/{print $1}' /etc/fstab 2> /dev/null)
 }
 
+users_with_open_files() {
+    local all_users id name uid gid full_name
+
+    readarray -t all_users < <(lsof -Fnu | awk '/^u/&&!x[$0]++')
+
+    printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" "NAME" "UID" "GID" "FULL NAME"
+    for id in "${all_users[@]}"; do
+        while read -r name uid gid full_name; do
+            printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" "$name" "$uid" "$gid" "$full_name" 
+        done < <(getent passwd "${id:1}" | awk -F: '{print $1, $3, $4, $5}')
+    done
+}
+
 file_vulnerability() {
     local world_write setbits
 
@@ -194,6 +209,15 @@ file_vulnerability() {
     [[ -n "$setbits" ]] && printf "%bFiles with setgids/setuids:%b\n%s\n" "$blue" "$reset" "$setbits"
 }
 
+whotf() {
+    local user stats full_name
+
+    while read -r user stats; do
+        full_name=$(getent passwd "$user" | awk -F: '{print $5}')
+        printf "%-32.32s %s (%s)\n" "${full_name:-$user}" "$stats" "$user"
+    done < <(who)
+}
+
 zombies() {
     printf "%bZombie Process Count: %b" "$blue" "$reset"
     ps axo stat | awk 'BEGIN{i=0}/Z/{i++;}END{print i}'
@@ -202,12 +226,13 @@ zombies() {
 get_args() {
     local option
 
-    while getopts ':defhikmnr:suvz' option; do
+    while getopts ':defhikmnor:suvw:z' option; do
         case "$option" in
-            d|e|f|i|k|m|n|s|u|z) args_array+=("$option") ;;
+            d|e|f|i|k|m|n|o|s|u|z) args_array+=("$option") ;;
             h) usage; exit 0 ;;
             r) ssh -qt "$OPTARG" "bash -s" < "$0" ;;
             v) printf "%s\n" "$version"; exit 0 ;;
+            w) args_array+=("$option"); user="$OPTARG" ;;
             ?)
                 printf "health: invalid option -- '%s'\n" "$OPTARG" >&2
                 printf "Try 'health -h' for more information.\n" >&2; exit 2
@@ -246,8 +271,10 @@ main() {
         [[ "$arg" == "k" ]] && check_kernel
         [[ "$arg" == "m" ]] && check_mounts
         [[ "$arg" == "n" ]] && get_network_info
+        [[ "$arg" == "o" ]] && users_with_open_files
         [[ "$arg" == "s" ]] && file_vulnerability
         [[ "$arg" == "u" ]] && find "$dir" -xdev -printf '%h\n' | sort | uniq -c | sort -rn | head
+        [[ "$arg" == "w" ]] && getent passwd "$user"
         [[ "$arg" == "z" ]] && zombies
     done
 
