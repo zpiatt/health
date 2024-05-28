@@ -1,7 +1,7 @@
 # Health
 <p align="left">
 <a href="./LICENSE.md"><img src="https://img.shields.io/github/license/zpiatt/health"></a>
-<a href="./LICENSE.md"><img src="https://img.shields.io/github/license/zpiatt/health"></a>
+<a href="https://github.com/zpiatt/health/releases"><img src="https://img.shields.io/github/v/release/zpiatt/health">
 </p>
 
 Health is a command-line system status check tool written in `bash 3.2+`. Designed for Red Hat Enterprise Linux (RHEL) environments, Health provides an easy way to display general system statistics, scrutinize file systems for common errors, and check for a variety of other typical system issues.
