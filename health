@@ -18,16 +18,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.7.0 - May 27, 2024"
+readonly version="Health version: 1.7.1 - May 29, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
     printf "Display general system statisics and check for common errors.\n\n"
-    printf "  -d,   display colorized file system disk space usage\n"
+    printf "  -d,   display colorized disk space usage when greater than 90%%\n"
     printf "  -e,   parse dmesg for alerts, errors, etc. (may require sudo)\n"
     printf "  -f,   report 10 largest files in specified directory tree\n"
     printf "  -h,   display this help and exit\n"
-    printf "  -i,   display colorized file systems inodes usage\n"
+    printf "  -i,   display colorized inodes usage when greater than 90%%\n"
     printf "  -k,   display kernel information; check for updates\n"
     printf "  -m,   check mounts for common errors\n"
     printf "  -n,   display basic network details\n"
@@ -61,17 +61,18 @@ health() {
 }
 
 check_df() {
-    local line
+    local line status
 
-    timeout 2 df &> /dev/null || { printf "%bHung mount detected.%b\n" "$yellow" "$reset" >&2; return 1; }
-    printf "%bDisk Usage:%b\n" "$blue" "$reset"
+    timeout 2 df &> /dev/null || { printf "%bHung mount detected%b\n" "$yellow" "$reset" >&2; return 1; }
+
     while read -r line; do
         case "$line" in
-            *100%*) printf "%b%s%b\n" "$red" "$line" "$reset" ;;
-            *9?%*) printf "%b%s%b\n" "$yellow" "$line" "$reset" ;;
-            *) printf "%s\n" "$line" ;;
+            *100%*) printf "%b%s%b\n" "$red" "$line" "$reset"; status=1 ;;
+            *9?%*) printf "%b%s%b\n" "$yellow" "$line" "$reset"; status=1 ;;
         esac
     done < <(df "$1")
+
+    return "${status:-0}"
 }
 
 dmesg_parse() {
@@ -90,11 +91,6 @@ dmesg_parse() {
     [[ -n "$alert" ]] && printf "%balert messages%b: %d\n" "$yellow" "$reset" "${#alert[@]}"
     [[ -n "$err" ]] && printf "%berror messages%b: %d\n" "$yellow" "$reset" "${#err[@]}"
     [[ -n "$warn" ]] && printf "%bwarning messages%b: %d\n" "$yellow" "$reset" "${#warn[@]}"
-}
-
-large_files() {
-    printf "%b10 Largest Files in:%b %s\n" "$blue" "$reset" "$dir"
-    find "$dir" -xdev -type f -print0 | xargs -0 du -Sh | sort -rn | head
 }
 
 check_kernel() {
@@ -125,9 +121,7 @@ check_kernel() {
 check_mounts() {
     local mount error nfs_server
 
-    printf "%bMounts:%b\n" "$blue" "$reset"
-    timeout 2 df &> /dev/null || { printf "%bHung mount detected.%b\n" "$yellow" "$reset" >&2; return 1; }
-
+    printf "%bMounts & File Sytems:%b\n" "$blue" "$reset"
     while read -r mount; do
         findmnt "$mount" &> /dev/null || {
             printf "%b%s is declared in fstab but not mounted\n%b" "$yellow" "$mount" "$reset"
@@ -140,33 +134,33 @@ check_mounts() {
             error=true; }
     done < <(awk -F: '!/^#/&&/nfs/{print $1}' /etc/fstab 2> /dev/null)
 
-    [[ -z "$error" ]] && printf "No issues detected\n"
+    if check_df "-Ti"; then
+        check_df "-Th" || error=true
+    else
+        error=true
+    fi
 
-    printf "%bFull File Systems:%b\n%s\n" "$blue" "$reset" "$(df -h | grep "100%" || printf "None\n")"
-    printf "%bFull Inodes:%b\n%s\n" "$blue" "$reset" "$(df -i | grep "100%" || printf "None\n")"
+    [[ -z "$error" ]] && printf "No issues detected\n"
 }
 
 get_network_info() {
     local interface ip gateway dns dns_servers nfs_server
 
-    printf "%bNetwork Info:%b\n" "$blue" "$reset"
-
-    printf "Interface(s):\n"
+    printf "%bInterface(s):%b\n" "$blue" "$reset"
     while read -r interface ip; do
         printf "  %s - %s\n" "$interface" "$ip"
     done < <(ip route 2> /dev/null | awk '/src/{print $3, $9}')
     
-    printf "Default gateway(s):\n"
-    while read -r gateway; do
-        if ping -W1 -c1 "$gateway" &> /dev/null; then
-            printf "  %s (%breachable%b)\n" "$gateway" "$green" "$reset"
-        else
-            printf "  %s (%bunreachable%b)\n" "$gateway" "$yellow" "$reset"
-        fi
-    done < <(ip route 2> /dev/null | awk '/default/{print $3}')
+    printf "%bDefault gateway:%b\n" "$blue" "$reset"
+    gateway=$(ip route 2> /dev/null | awk '/default/{print $3}')
+    if ping -W1 -c1 "$gateway" &> /dev/null; then
+        printf "  %s (%breachable%b)\n" "$gateway" "$green" "$reset"
+    else
+        printf "  %s (%bunreachable%b)\n" "$gateway" "$yellow" "$reset"
+    fi
 
-    printf "DNS nameserver(s):\n"
-    if [[ -f /etc/systemd/resolved.conf ]]; then
+    printf "%bDNS nameserver(s):%b\n" "$blue" "$reset"
+    if grep "^DNS=" /etc/systemd/resolved.conf &> /dev/null; then
         readarray -t dns_servers < <(awk -F= '/^DNS=/ {print $2}' /etc/systemd/resolved.conf | xargs -n1)
     else
         readarray -t dns_servers < <(awk '/^nameserver/ {print $2}' /etc/resolv.conf)
@@ -180,7 +174,7 @@ get_network_info() {
         fi
     done
 
-    printf "NFS server(s):\n"
+    printf "%bNFS server(s):%b\n" "$blue" "$reset"
     while read -r nfs_server; do
         printf "  %s\n" "$nfs_server"
     done < <(awk -F: '!/^#/&&/nfs/{print $1}' /etc/fstab 2> /dev/null)
@@ -216,11 +210,6 @@ whotf() {
         full_name=$(getent passwd "$user" | awk -F: '{print $5}')
         printf "%-32.32s %s (%s)\n" "${full_name:-$user}" "$stats" "$user"
     done < <(who)
-}
-
-zombies() {
-    printf "%bZombie Process Count: %b" "$blue" "$reset"
-    ps axo stat | awk 'BEGIN{i=0}/Z/{i++;}END{print i}'
 }
 
 get_args() {
@@ -266,7 +255,7 @@ main() {
     for arg in "${args_array[@]}"; do
         [[ "$arg" == "d" ]] && check_df "-Th"
         [[ "$arg" == "e" ]] && dmesg_parse
-        [[ "$arg" == "f" ]] && large_files
+        [[ "$arg" == "f" ]] && find "$dir" -xdev -type f -print0 | xargs -0 du -Sh | sort -rn | head
         [[ "$arg" == "i" ]] && check_df "-Ti"
         [[ "$arg" == "k" ]] && check_kernel
         [[ "$arg" == "m" ]] && check_mounts
@@ -275,7 +264,7 @@ main() {
         [[ "$arg" == "s" ]] && file_vulnerability
         [[ "$arg" == "u" ]] && find "$dir" -xdev -printf '%h\n' | sort | uniq -c | sort -rn | head
         [[ "$arg" == "w" ]] && getent passwd "$user"
-        [[ "$arg" == "z" ]] && zombies
+        [[ "$arg" == "z" ]] && ps axo stat | awk 'BEGIN{i=0}/Z/{i++;}END{print i}'
     done
 
     return 0

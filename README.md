@@ -18,6 +18,9 @@ Health is a command-line system status check tool written in `bash 3.2+`. Design
   - Show `passwd` information for specified user ( `-w` option ).
   - Added `whotf` function to clarify output of `who` in cases where usernames are not human-readable
 
+### Upcoming features:
+  - I'm working to add a return status (`1`) for error checks to indicate if an error was found.
+
 If you're using RHEL 7 or later and encounter issues or have suggestions for routine error checks, please feel free to reach out!
 
 ### Suggested Usage:
