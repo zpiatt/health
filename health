@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.7.1 - May 29, 2024"
+readonly version="Health version: 1.7.2 - June 3, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -42,13 +42,16 @@ usage() {
 }
 
 health() {
+    local product_name sys_vendor
+
     printf "%bHostname:%b %s\n" "$blue" "$reset" "$(hostname)"
     get_network_info
-    if [[ -f /sys/devices/virtual/dmi/id/product_name && -f /sys/devices/virtual/dmi/id/sys_vendor ]]; then
-        printf "%bServer Info:%b %s, %s\n" "$blue" "$reset" \
-        "$(< /sys/devices/virtual/dmi/id/product_name)" "$(< /sys/devices/virtual/dmi/id/sys_vendor)"
-    fi
-    [[ -f /etc/redhat-release ]] && printf "%bLinux Version:%b %s\n" "$blue" "$reset" "$(< /etc/redhat-release)"
+    product_name=/sys/devices/virtual/dmi/id/product_name
+    sys_vendor=/sys/devices/virtual/dmi/id/sys_vendor
+    [[ -f "$product_name" && -f "$sys_vendor" ]] && {
+        printf "%bServer Info:%b %s, %s\n" "$blue" "$reset" "$(< "$product_name")" "$(< "$sys_vendor")"; }
+    [[ -f /etc/redhat-release ]] && {
+        printf "%bLinux Version:%b %s\n" "$blue" "$reset" "$(< /etc/redhat-release)"; }
     printf "%bKernel Version:%b %s\n" "$blue" "$reset" "$(awk '{print $3}' /proc/version)"
     printf "%bUptime:%b %s\n" "$blue" "$reset" "$(uptime)"
     printf "%bUsers Currently Logged in:%b\n" "$blue" "$reset"; whotf
@@ -129,10 +132,10 @@ check_mounts() {
     done < <(awk '!/^#/ && $2~/^[/]/ {print $2}' /etc/fstab)
 
     while read -r nfs_server; do
-        timeout 1 showmount "$nfs_server" &> /dev/null || {
-            printf "  %s (%bpotential NFS error%b)\n" "$nfs_server" "$yellow" "$reset"
+        timeout 1 showmount "${nfs_server%%:*}" &> /dev/null || {
+            printf "  %s (%bpotential NFS error%b)\n" "${nfs_server%%:*}" "$yellow" "$reset"
             error=true; }
-    done < <(awk -F: '!/^#/&&/nfs/{print $1}' /etc/fstab 2> /dev/null)
+    done < <(awk '!/^#/ && $3~/nfs/{print $1}' /etc/fstab 2> /dev/null)
 
     if check_df "-Ti"; then
         check_df "-Th" || error=true
@@ -235,7 +238,12 @@ get_args() {
     elif [[ ! -d "$1" ]]; then
         printf "'%s': not a valid path.\n" "$1" >&2; exit 2
     else
-       dir="$1"
+        if [[ -n "${args_array[@]}" ]]; then
+            dir="$1"
+        else
+            printf "health: invalid option -- '%s'\n" "$*" >&2
+            printf "Try 'health -h' for more information.\n" >&2; exit 2
+        fi
     fi
 }
 
