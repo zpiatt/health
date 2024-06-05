@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.7.2 - June 3, 2024"
+readonly version="Health version: 1.7.3 - June 5, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -263,7 +263,7 @@ main() {
     for arg in "${args_array[@]}"; do
         [[ "$arg" == "d" ]] && check_df "-Th"
         [[ "$arg" == "e" ]] && dmesg_parse
-        [[ "$arg" == "f" ]] && find "$dir" -xdev -type f -print0 | xargs -0 du -Sh | sort -rn | head
+        [[ "$arg" == "f" ]] && find "$dir" -xdev -type f -print0 | xargs -0 du -Sh | sort -rh | head
         [[ "$arg" == "i" ]] && check_df "-Ti"
         [[ "$arg" == "k" ]] && check_kernel
         [[ "$arg" == "m" ]] && check_mounts
