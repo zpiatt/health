@@ -12,11 +12,10 @@ Health is a command-line system status check tool written in `bash 3.2+`. Design
   - __NOTE__: RHEL 6 ELS (Extended Life-cycle Support) ends 30JUNE2024. Most of `health` *should* continue to work, however, I will not make updates specifically maintain support for RHEL 6.
 
 ### Recently added:
-  - Show all users with open files ( `-o` option ):
-      - This option leverages `lsof` to determine all unique users with files open on the target server.
-      - __NOTE__: This will likely require sudo/root privileges. 
-  - Show `passwd` information for specified user ( `-w` option ).
-  - Added `whotf` function to clarify output of `who` in cases where usernames are not human-readable
+  - Removed options already parsed automatically by running `health` without arguments.
+      - `-d` & `-i` parsed the output of `df` for disk or inode usage greater than 90%.
+      - `-m` compared `/etc/fstab` to what if reported as mounted by `findmnt`.
+      - `-n` displayed general network statistics.
 
 ### Upcoming features:
   - I'm working to add a return status (`1`) for error checks to indicate if an error was found.

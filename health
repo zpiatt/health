@@ -18,19 +18,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.7.3 - June 5, 2024"
+readonly version="Health version: 1.8.0 - June 13, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
     printf "Display general system statisics and check for common errors.\n\n"
-    printf "  -d,   display colorized disk space usage when greater than 90%%\n"
     printf "  -e,   parse dmesg for alerts, errors, etc. (may require sudo)\n"
     printf "  -f,   report 10 largest files in specified directory tree\n"
     printf "  -h,   display this help and exit\n"
-    printf "  -i,   display colorized inodes usage when greater than 90%%\n"
     printf "  -k,   display kernel information; check for updates\n"
-    printf "  -m,   check mounts for common errors\n"
-    printf "  -n,   display basic network details\n"
     printf "  -o,   show users with open files (may require sudo)\n"
     printf "  -r,   display health on remote host\n"
     printf "  -s,   search for common file permission vulnerabilities\n"
@@ -65,8 +61,6 @@ health() {
 
 check_df() {
     local line status
-
-    timeout 2 df &> /dev/null || { printf "%bHung mount detected%b\n" "$yellow" "$reset" >&2; return 1; }
 
     while read -r line; do
         case "$line" in
@@ -137,9 +131,11 @@ check_mounts() {
             error=true; }
     done < <(awk '!/^#/ && $3~/nfs/{print $1}' /etc/fstab 2> /dev/null)
 
-    if check_df "-Ti"; then
+    if timeout 2 df &> /dev/null; then
+        check_df "-Ti" || error=true
         check_df "-Th" || error=true
     else
+        printf "%bHung mount detected%b\n" "$yellow" "$reset" >&2
         error=true
     fi
 
@@ -218,9 +214,9 @@ whotf() {
 get_args() {
     local option
 
-    while getopts ':defhikmnor:suvw:z' option; do
+    while getopts ':efhkor:suvw:z' option; do
         case "$option" in
-            d|e|f|i|k|m|n|o|s|u|z) args_array+=("$option") ;;
+            e|f|k|o|s|u|z) args_array+=("$option") ;;
             h) usage; exit 0 ;;
             r) ssh -qt "$OPTARG" "bash -s" < "$0" ;;
             v) printf "%s\n" "$version"; exit 0 ;;
@@ -261,13 +257,9 @@ main() {
     fi
 
     for arg in "${args_array[@]}"; do
-        [[ "$arg" == "d" ]] && check_df "-Th"
         [[ "$arg" == "e" ]] && dmesg_parse
         [[ "$arg" == "f" ]] && find "$dir" -xdev -type f -print0 | xargs -0 du -Sh | sort -rh | head
-        [[ "$arg" == "i" ]] && check_df "-Ti"
         [[ "$arg" == "k" ]] && check_kernel
-        [[ "$arg" == "m" ]] && check_mounts
-        [[ "$arg" == "n" ]] && get_network_info
         [[ "$arg" == "o" ]] && users_with_open_files
         [[ "$arg" == "s" ]] && file_vulnerability
         [[ "$arg" == "u" ]] && find "$dir" -xdev -printf '%h\n' | sort | uniq -c | sort -rn | head
