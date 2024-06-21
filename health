@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.8.0 - June 13, 2024"
+readonly version="Health version: 1.8.1 - June 20, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -244,11 +244,11 @@ get_args() {
 }
 
 main() {
-    green='\033[38;5;46m'
-    yellow='\033[38;5;226m'
-    blue='\033[38;5;33m'
-    red='\033[38;5;160m'
     reset='\033[0m'
+    red='\033[0;31m'
+    green='\033[0;32m'
+    yellow='\033[0;33m'
+    blue='\033[0;34m'
 
     if [[ "$#" -eq 0 ]]; then
         health; exit 0
