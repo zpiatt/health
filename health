@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.8.1 - June 20, 2024"
+readonly version="Health version: 1.9.0 - June 23, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -41,17 +41,18 @@ health() {
     local product_name sys_vendor
 
     printf "%bHostname:%b %s\n" "$blue" "$reset" "$(hostname)"
-    get_network_info
     product_name=/sys/devices/virtual/dmi/id/product_name
     sys_vendor=/sys/devices/virtual/dmi/id/sys_vendor
     [[ -f "$product_name" && -f "$sys_vendor" ]] && {
-        printf "%bServer Info:%b %s, %s\n" "$blue" "$reset" "$(< "$product_name")" "$(< "$sys_vendor")"; }
-    [[ -f /etc/redhat-release ]] && {
-        printf "%bLinux Version:%b %s\n" "$blue" "$reset" "$(< /etc/redhat-release)"; }
-    printf "%bKernel Version:%b %s\n" "$blue" "$reset" "$(awk '{print $3}' /proc/version)"
+        printf "%bHost Info:%b %s, %s\n" "$blue" "$reset" "$(<"$product_name")" "$(<"$sys_vendor")"; }
+    if [[ -f /etc/redhat-release ]]; then
+        printf "%bVersion:%b %s (%s)\n" "$blue" "$reset" "$(< /etc/redhat-release)" \
+            "$(awk '{print $3}' /proc/version)"
+    fi
     printf "%bUptime:%b %s\n" "$blue" "$reset" "$(uptime)"
-    printf "%bUsers Currently Logged in:%b\n" "$blue" "$reset"; whotf
-    printf "%bMemory Usage:%b\n%s\n" "$blue" "$reset" "$(free -h)"
+    get_network_info
+    whotf
+    get_mem_info
     printf "%bTop 5 Processes by Memory:%b\n%s\n" "$blue" "$reset" \
         "$(ps -eo %mem,comm,pid --sort=-%mem | head -n 6)"
     printf "%bTop 5 Processes by CPU:%b\n%s\n" "$blue" "$reset" \
@@ -75,13 +76,14 @@ check_df() {
 dmesg_parse() {
     local level emerg crit alert err warn
 
-    dmesg -V &> /dev/null || {
+    if dmesg -V &> /dev/null; then
+        for level in emerg crit alert err warn; do
+            readarray -t "$level" < <(dmesg -l "$level")
+        done
+    else
         printf "health: dmesg version insufficient\n" >&2
-        printf "Try 'health -h' for more information.\n" >&2; return 1; }
-
-    for level in emerg crit alert err warn; do
-        readarray -t "$level" < <(dmesg -l "$level")
-    done
+        printf "Try 'health -h' for more information.\n" >&2
+    fi
 
     [[ -n "$emerg" ]] && printf "%bemergency messages%b: %d\n" "$red" "$reset" "${#emerg[@]}"
     [[ -n "$crit" ]] && printf "%bcritical messages%b: %d\n" "$red" "$reset" "${#crit[@]}"
@@ -91,7 +93,7 @@ dmesg_parse() {
 }
 
 check_kernel() {
-    local current_kernel latest_kernel check_yum available_kernel
+    local current_kernel check_yum available_kernel latest_kernel
 
     current_kernel=$(awk '{print $3}' /proc/version)
     check_yum=$(yum list updates kernel 2>&1)
@@ -116,20 +118,21 @@ check_kernel() {
 }
 
 check_mounts() {
-    local mount error nfs_server
+    local line mounts nfs_servers mount error nfs
 
     printf "%bMounts & File Sytems:%b\n" "$blue" "$reset"
-    while read -r mount; do
-        findmnt "$mount" &> /dev/null || {
-            printf "%b%s is declared in fstab but not mounted\n%b" "$yellow" "$mount" "$reset"
-            error=true; }
-    done < <(awk '!/^#/ && $2~/^[/]/ {print $2}' /etc/fstab)
+    while read -ra line; do
+        [[ ! "${line[0]}" =~ ^# && "${line[1]}" =~ ^/ ]] && mounts+=("${line[1]}")
+    done < /etc/fstab
 
-    while read -r nfs_server; do
-        timeout 1 showmount "${nfs_server%%:*}" &> /dev/null || {
-            printf "  %s (%bpotential NFS error%b)\n" "${nfs_server%%:*}" "$yellow" "$reset"
-            error=true; }
-    done < <(awk '!/^#/ && $3~/nfs/{print $1}' /etc/fstab 2> /dev/null)
+    if [[ -n "${mounts[*]}" ]]; then
+        for mount in "${mounts[@]}"; do
+            if ! findmnt "$mount" &> /dev/null; then
+                printf "%b%s is declared in fstab but not mounted\n%b" "$yellow" "$mount" "$reset"
+                error=true
+            fi
+        done
+    fi
 
     if timeout 2 df &> /dev/null; then
         check_df "-Ti" || error=true
@@ -143,26 +146,44 @@ check_mounts() {
 }
 
 get_network_info() {
-    local interface ip gateway dns dns_servers nfs_server
+    local line gateway interface dns_servers dns ntp_servers ntp nfs
 
-    printf "%bInterface(s):%b\n" "$blue" "$reset"
-    while read -r interface ip; do
-        printf "  %s - %s\n" "$interface" "$ip"
-    done < <(ip route 2> /dev/null | awk '/src/{print $3, $9}')
-    
-    printf "%bDefault gateway:%b\n" "$blue" "$reset"
-    gateway=$(ip route 2> /dev/null | awk '/default/{print $3}')
-    if ping -W1 -c1 "$gateway" &> /dev/null; then
-        printf "  %s (%breachable%b)\n" "$gateway" "$green" "$reset"
-    else
-        printf "  %s (%bunreachable%b)\n" "$gateway" "$yellow" "$reset"
+    declare -A interfaces
+
+    while read -ra line; do
+        if [[ "${line[0]}" == default ]]; then
+            gateway="${line[2]}"
+        elif [[ "${line[6]}" == link ]]; then
+            interfaces["${line[2]}"]="${line[8]}"
+        fi
+    done < <(ip route 2> /dev/null)
+
+    if [[ -n "${interfaces[*]}" ]]; then
+        printf "%bInterface(s):%b\n" "$blue" "$reset"
+        for interface in "${!interfaces[@]}"; do
+            printf "  %s - %s\n" "$interface" "${interfaces[$interface]}"
+        done
+    fi
+
+    if [[ -n "$gateway" ]]; then
+        printf "%bDefault gateway:%b\n" "$blue" "$reset"
+        gateway=$(ip route 2> /dev/null | awk '/default/{print $3}')
+        if ping -W1 -c1 "$gateway" &> /dev/null; then
+            printf "  %s (%breachable%b)\n" "$gateway" "$green" "$reset"
+        else
+            printf "  %s (%bunreachable%b)\n" "$gateway" "$yellow" "$reset"
+        fi
     fi
 
     printf "%bDNS nameserver(s):%b\n" "$blue" "$reset"
     if grep "^DNS=" /etc/systemd/resolved.conf &> /dev/null; then
-        readarray -t dns_servers < <(awk -F= '/^DNS=/ {print $2}' /etc/systemd/resolved.conf | xargs -n1)
+        while read -ra line; do
+            [[ "${line[0]}" =~ ^DNS= ]] && dns_servers=("${line[@]#DNS=}")
+        done < /etc/systemd/resolved.conf
     else
-        readarray -t dns_servers < <(awk '/^nameserver/ {print $2}' /etc/resolv.conf)
+        while read -ra line; do
+            [[ "${line[0]}" =~ ^nameserver ]] && dns_servers+=("${line[1]}")
+        done < /etc/resolv.conf
     fi
 
     for dns in "${dns_servers[@]}"; do
@@ -173,22 +194,55 @@ get_network_info() {
         fi
     done
 
-    printf "%bNFS server(s):%b\n" "$blue" "$reset"
-    while read -r nfs_server; do
-        printf "  %s\n" "$nfs_server"
-    done < <(awk -F: '!/^#/&&/nfs/{print $1}' /etc/fstab 2> /dev/null)
+    while read -ra line; do
+        case "${line[0]}" in
+            ^\*) ntp_servers+=("${line[1]} (${green}primary${reset})") ;;
+            ^\+) ntp_servers+=("${line[1]} (${green}combined${reset})") ;;
+            ^-) ntp_servers+=("${line[1]} (${yellow}usable${reset})") ;;
+            ^x) ntp_servers+=("${line[1]} (${yellow}potential error${reset})") ;;
+            ^~) ntp_servers+=("${line[1]} (${red}unstable${reset})") ;;
+            ^\?) ntp_servers+=("${line[1]} (${red}unusable${reset})") ;;
+            *) ;;
+        esac
+    done < <(chronyc -n sources 2> /dev/null)
+
+    if [[ -n "${ntp_servers[*]}" ]]; then
+        printf "%bNTP server(s):%b\n" "$blue" "$reset"
+        for ntp in "${ntp_servers[@]}"; do
+            printf "  %b\n" "$ntp"
+        done
+    fi
+
+    declare -A nfs_servers
+
+    while read -ra line; do
+        if [[ ! "${line[0]}" =~ ^# && "${line[2]}" == nfs ]]; then
+            nfs_servers["${line[0]%:*}"]=1
+        fi
+    done < /etc/fstab
+
+    if [[ -n "${nfs_servers[*]}" ]]; then
+        printf "%bNFS Server(s):%b\n" "$blue" "$reset"
+        for nfs in "${!nfs_servers[@]}"; do
+            if timeout 1 showmount "$nfs" &> /dev/null; then
+                printf "  %s (%breachable%b)\n" "$nfs" "$green" "$reset"
+            else
+                printf "  %s (%bpotential NFS error%b)\n" "$nfs" "$yellow" "$reset"
+            fi
+        done
+    fi
 }
 
 users_with_open_files() {
-    local all_users id name uid gid full_name
+    local all_users id
 
     readarray -t all_users < <(lsof -Fnu | awk '/^u/&&!x[$0]++')
 
     printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" "NAME" "UID" "GID" "FULL NAME"
     for id in "${all_users[@]}"; do
-        while read -r name uid gid full_name; do
-            printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" "$name" "$uid" "$gid" "$full_name" 
-        done < <(getent passwd "${id:1}" | awk -F: '{print $1, $3, $4, $5}')
+        while IFS=':' read -ra line; do
+            printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" "${line[0]}" "${line[2]}" "${line[3]}" "${line[4]}"
+        done < <(getent passwd "${id:1}")
     done
 }
 
@@ -205,10 +259,57 @@ file_vulnerability() {
 whotf() {
     local user stats full_name
 
+    printf "%bUsers Currently Logged in:%b\n" "$blue" "$reset"
     while read -r user stats; do
         full_name=$(getent passwd "$user" | awk -F: '{print $5}')
         printf "%-32.32s %s (%s)\n" "${full_name:-$user}" "$stats" "$user"
     done < <(who)
+}
+
+get_mem_info() {
+    local mem_total mem_free buffers cached swap_total swap_free mem_percent swap_percent line
+
+    printf "%bMemory Usage:%b\n" "$blue" "$reset"
+    while read -ra line; do
+        case "${line[0]}" in
+            MemTotal:) mem_total="${line[1]}" ;;
+            MemFree:) mem_free="${line[1]}" ;;
+            Buffers:) buffers="${line[1]}" ;;
+            Cached:) cached="${line[1]}" ;;
+            SwapTotal:) swap_total="${line[1]}" ;;
+            SwapFree:) swap_free="${line[1]}" ;;
+        esac
+    done < /proc/meminfo
+
+    mem_percent=$(( ((mem_total - mem_free - buffers - cached) * 100) / mem_total ))
+    swap_percent=$(( ((swap_total - swap_free) * 100) / swap_total ))
+
+    printf "%20s %10s %11s %11s %11s %11s %11s\n" \
+        "total" "used" "free" "shared"  "buff/cache" "available" "used%"
+
+    while read -ra line; do
+        case "${line[0]}" in
+            Mem:)
+                if [[ "$mem_percent" -ge 90 ]]; then
+                    printf "%s %15s %10s %11s %11s %11s %11s %b%11s%b\n" \
+                        "${line[@]}" "$red" "${mem_percent}%" "$reset"
+                else
+                    printf "%s %15s %10s %11s %11s %11s %11s %11s\n" \
+                        "${line[@]}" "${mem_percent}%"
+                fi
+            ;;
+
+            Swap:)
+                if [[ "$swap_percent" -ge 90 ]]; then
+                    printf "%s %14s %10s %11s %b%47s%b\n" \
+                        "${line[@]}" "$red" "${swap_percent}%" "$reset"
+                else
+                    printf "%s %14s %10s %11s %47s\n" \
+                        "${line[@]}" "${swap_percent}%"
+                fi
+            ;;
+        esac
+    done < <(free -h)
 }
 
 get_args() {
@@ -234,7 +335,7 @@ get_args() {
     elif [[ ! -d "$1" ]]; then
         printf "'%s': not a valid path.\n" "$1" >&2; exit 2
     else
-        if [[ -n "${args_array[@]}" ]]; then
+        if [[ -n "${args_array[*]}" ]]; then
             dir="$1"
         else
             printf "health: invalid option -- '%s'\n" "$*" >&2

@@ -7,18 +7,18 @@
 Health is a command-line system status check tool written in `bash 3.2+`. Designed for Red Hat Enterprise Linux (RHEL) environments, Health provides an easy way to display general system statistics, scrutinize file systems for common errors, and check for a variety of other typical system issues.
 
 ### Status Update:
+  - I will be away for work for all of July. I expect to work out any small bugs with the changes below in that time, and push a release upon my return.
   - __Focus on RedHat Enterprise Linux__: The script is now focused on RHEL version 7+. I work in a RedHat environment, and maintaining a script for all OS versions became too cumbersome.
   - Please fork this project to adapt it to other operating systems. I'm willing to assist with specific customization questions, but the script will focus on RHEL 7+ henceforth.
   - __NOTE__: RHEL 6 ELS (Extended Life-cycle Support) ends 30JUNE2024. Most of `health` *should* continue to work, however, I will not make updates specifically maintain support for RHEL 6.
 
 ### Recently added:
-  - Removed options already parsed automatically by running `health` without arguments.
-      - `-d` & `-i` parsed the output of `df` for disk or inode usage greater than 90%.
-      - `-m` compared `/etc/fstab` to what if reported as mounted by `findmnt`.
-      - `-n` displayed general network statistics.
-
-### Upcoming features:
-  - I'm working to add a return status (`1`) for error checks to indicate if an error was found.
+  - Significant changes have been made to how the script parses information from the system.
+      - I've reduced system calls by reading files directly where applicable. In practice, this should yield modest performance gains.
+  - Added parsing of memory/swap usage percentage. The output will resemble `free -h` however it will feature and additional "used%" field.
+      - The field is also colored red when either memory/swap usage is greater than 90%.
+  - Added parsing of NTP server information.
+      - Provided the target host/server is using `chronyd`, the NTP server status is also displayed.
 
 If you're using RHEL 7 or later and encounter issues or have suggestions for routine error checks, please feel free to reach out!
 
