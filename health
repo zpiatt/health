@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.9.0 - June 23, 2024"
+readonly version="Health version: 1.9.1 - June 27, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -121,7 +121,7 @@ check_mounts() {
     local line mounts nfs_servers mount error nfs
 
     printf "%bMounts & File Sytems:%b\n" "$blue" "$reset"
-    while read -ra line; do
+    while read -ra line || [[ -n "${line[*]}" ]]; do
         [[ ! "${line[0]}" =~ ^# && "${line[1]}" =~ ^/ ]] && mounts+=("${line[1]}")
     done < /etc/fstab
 
@@ -177,11 +177,11 @@ get_network_info() {
 
     printf "%bDNS nameserver(s):%b\n" "$blue" "$reset"
     if grep "^DNS=" /etc/systemd/resolved.conf &> /dev/null; then
-        while read -ra line; do
+        while read -ra line || [[ -n "${line[*]}" ]]; do
             [[ "${line[0]}" =~ ^DNS= ]] && dns_servers=("${line[@]#DNS=}")
         done < /etc/systemd/resolved.conf
     else
-        while read -ra line; do
+        while read -ra line || [[ -n "${line[*]}" ]]; do
             [[ "${line[0]}" =~ ^nameserver ]] && dns_servers+=("${line[1]}")
         done < /etc/resolv.conf
     fi
@@ -215,7 +215,7 @@ get_network_info() {
 
     declare -A nfs_servers
 
-    while read -ra line; do
+    while read -ra line || [[ -n "${line[*]}" ]]; do
         if [[ ! "${line[0]}" =~ ^# && "${line[2]}" == nfs ]]; then
             nfs_servers["${line[0]%:*}"]=1
         fi
@@ -270,7 +270,7 @@ get_mem_info() {
     local mem_total mem_free buffers cached swap_total swap_free mem_percent swap_percent line
 
     printf "%bMemory Usage:%b\n" "$blue" "$reset"
-    while read -ra line; do
+    while read -ra line || [[ -n "${line[*]}" ]]; do
         case "${line[0]}" in
             MemTotal:) mem_total="${line[1]}" ;;
             MemFree:) mem_free="${line[1]}" ;;
