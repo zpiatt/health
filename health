@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.9.1 - June 27, 2024"
+readonly version="Health version: 1.9.2 - August 5, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -196,11 +196,11 @@ get_network_info() {
 
     while read -ra line; do
         case "${line[0]}" in
-            ^\*) ntp_servers+=("${line[1]} (${green}primary${reset})") ;;
+            ^\*) ntp_servers+=("${line[1]} (${green}current best${reset})") ;;
             ^\+) ntp_servers+=("${line[1]} (${green}combined${reset})") ;;
-            ^-) ntp_servers+=("${line[1]} (${yellow}usable${reset})") ;;
-            ^x) ntp_servers+=("${line[1]} (${yellow}potential error${reset})") ;;
-            ^~) ntp_servers+=("${line[1]} (${red}unstable${reset})") ;;
+            ^-) ntp_servers+=("${line[1]} (${green}not combined${reset})") ;;
+            ^x) ntp_servers+=("${line[1]} (${yellow}may be in error${reset})") ;;
+            ^~) ntp_servers+=("${line[1]} (${red}too variable${reset})") ;;
             ^\?) ntp_servers+=("${line[1]} (${red}unusable${reset})") ;;
             *) ;;
         esac
@@ -281,8 +281,10 @@ get_mem_info() {
         esac
     done < /proc/meminfo
 
-    mem_percent=$(( ((mem_total - mem_free - buffers - cached) * 100) / mem_total ))
-    swap_percent=$(( ((swap_total - swap_free) * 100) / swap_total ))
+    (( mem_total > 0 )) && \
+        mem_percent=$(( ((mem_total - mem_free - buffers - cached) * 100) / mem_total ))
+    (( swap_total > 0 )) && \
+        swap_percent=$(( ((swap_total - swap_free) * 100) / swap_total ))
 
     printf "%20s %10s %11s %11s %11s %11s %11s\n" \
         "total" "used" "free" "shared"  "buff/cache" "available" "used%"
@@ -290,7 +292,7 @@ get_mem_info() {
     while read -ra line; do
         case "${line[0]}" in
             Mem:)
-                if [[ "$mem_percent" -ge 90 ]]; then
+                if (( mem_percent >= 90 )); then
                     printf "%s %15s %10s %11s %11s %11s %11s %b%11s%b\n" \
                         "${line[@]}" "$red" "${mem_percent}%" "$reset"
                 else
@@ -300,7 +302,7 @@ get_mem_info() {
             ;;
 
             Swap:)
-                if [[ "$swap_percent" -ge 90 ]]; then
+                if (( swap_percent >= 90 )); then
                     printf "%s %14s %10s %11s %b%47s%b\n" \
                         "${line[@]}" "$red" "${swap_percent}%" "$reset"
                 else
