@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.9.2 - August 5, 2024"
+readonly version="Health version: 1.9.3 - August 10, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -40,15 +40,14 @@ usage() {
 health() {
     local product_name sys_vendor
 
-    printf "%bHostname:%b %s\n" "$blue" "$reset" "$(hostname)"
+    printf "%bHostname:%b %s\n" "$blue" "$reset" "$(< /etc/hostname)"
     product_name=/sys/devices/virtual/dmi/id/product_name
     sys_vendor=/sys/devices/virtual/dmi/id/sys_vendor
     [[ -f "$product_name" && -f "$sys_vendor" ]] && {
         printf "%bHost Info:%b %s, %s\n" "$blue" "$reset" "$(<"$product_name")" "$(<"$sys_vendor")"; }
-    if [[ -f /etc/redhat-release ]]; then
+    [[ -f /etc/redhat-release ]] && {
         printf "%bVersion:%b %s (%s)\n" "$blue" "$reset" "$(< /etc/redhat-release)" \
-            "$(awk '{print $3}' /proc/version)"
-    fi
+            "$(awk '{print $3}' /proc/version)"; }
     printf "%bUptime:%b %s\n" "$blue" "$reset" "$(uptime)"
     get_network_info
     whotf
@@ -167,7 +166,6 @@ get_network_info() {
 
     if [[ -n "$gateway" ]]; then
         printf "%bDefault gateway:%b\n" "$blue" "$reset"
-        gateway=$(ip route 2> /dev/null | awk '/default/{print $3}')
         if ping -W1 -c1 "$gateway" &> /dev/null; then
             printf "  %s (%breachable%b)\n" "$gateway" "$green" "$reset"
         else
@@ -294,20 +292,20 @@ get_mem_info() {
             Mem:)
                 if (( mem_percent >= 90 )); then
                     printf "%s %15s %10s %11s %11s %11s %11s %b%11s%b\n" \
-                        "${line[@]}" "$red" "${mem_percent}%" "$reset"
+                        "${line[@]}" "$red" "${mem_percent:-0}%" "$reset"
                 else
                     printf "%s %15s %10s %11s %11s %11s %11s %11s\n" \
-                        "${line[@]}" "${mem_percent}%"
+                        "${line[@]}" "${mem_percent:-0}%"
                 fi
             ;;
 
             Swap:)
                 if (( swap_percent >= 90 )); then
                     printf "%s %14s %10s %11s %b%47s%b\n" \
-                        "${line[@]}" "$red" "${swap_percent}%" "$reset"
+                        "${line[@]}" "$red" "${swap_percent:-0}%" "$reset"
                 else
                     printf "%s %14s %10s %11s %47s\n" \
-                        "${line[@]}" "${swap_percent}%"
+                        "${line[@]}" "${swap_percent:-0}%"
                 fi
             ;;
         esac

@@ -10,7 +10,7 @@ Health is a command-line system status check tool written in `bash 3.2+`. Design
   - I will be away for work for all of July. I expect to work out any small bugs with the changes below in that time, and push a release upon my return.
   - __Focus on RedHat Enterprise Linux__: The script is now focused on RHEL version 7+. I work in a RedHat environment, and maintaining a script for all OS versions became too cumbersome.
   - Please fork this project to adapt it to other operating systems. I'm willing to assist with specific customization questions, but the script will focus on RHEL 7+ henceforth.
-  - __NOTE__: RHEL 6 ELS (Extended Life-cycle Support) ends 30JUNE2024. Most of `health` *should* continue to work, however, I will not make updates specifically maintain support for RHEL 6.
+  - __NOTE__: RHEL 6 ELS (Extended Life-cycle Support) ended 30JUNE2024. Most of `health` *should* continue to work, however, I will not make updates specifically maintain support for RHEL 6.
 
 ### Recently added:
   - Significant changes have been made to how the script parses information from the system.
