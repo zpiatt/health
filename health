@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.9.4 - August 12, 2024"
+readonly version="Health version: 1.9.5 - August 30, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -40,7 +40,7 @@ usage() {
 health() {
     local product_name sys_vendor
 
-    printf "%bHostname:%b %s\n" "$blue" "$reset" "$(< /etc/hostname)"
+    printf "%bHostname:%b %s\n" "$blue" "$reset" "$(hostname)"
     product_name=/sys/devices/virtual/dmi/id/product_name
     sys_vendor=/sys/devices/virtual/dmi/id/sys_vendor
     [[ -f "$product_name" && -f "$sys_vendor" ]] && {
