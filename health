@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.9.5 - August 30, 2024"
+readonly version="Health version: 1.9.6 - September 30, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -188,7 +188,7 @@ get_network_info() {
     if [[ -n "${dns_servers[*]}" ]]; then
         printf "%bDNS nameserver(s):%b\n" "$blue" "$reset"
         for dns in "${dns_servers[@]}"; do
-            if ping -W1 -c1 "$dns" &> /dev/null; then
+            if nc -z "$dns" 53 &> /dev/null; then
                 printf "  %s (%breachable%b)\n" "$dns" "$green" "$reset"
             else
                 printf "  %s (%bpotential DNS error%b)\n" "$dns" "$yellow" "$reset"
