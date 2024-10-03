@@ -5,7 +5,7 @@
 #
 # Copyright (C) 2024 Zac Piatt
 #
-# This program is free software: you can redistribute it and/or modify
+# This program is free software: you can REDistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly version="Health version: 1.9.6 - September 30, 2024"
+readonly VERSION="Health version: 1.10.0 - October 3, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -26,7 +26,7 @@ usage() {
     printf "  -e,   parse dmesg for alerts, errors, etc. (may require sudo)\n"
     printf "  -f,   report 10 largest files in specified directory tree\n"
     printf "  -h,   display this help and exit\n"
-    printf "  -k,   display kernel information; check for updates\n"
+    printf "  -k,   check for available kernel updates (requires [yum/dnf])\n"
     printf "  -o,   show users with open files (may require sudo)\n"
     printf "  -r,   display health on remote host\n"
     printf "  -s,   search for common file permission vulnerabilities\n"
@@ -38,38 +38,37 @@ usage() {
 }
 
 health() {
-    local product_name sys_vendor
+    local distro product_name sys_vendor
 
-    printf "%bHostname:%b %s\n" "$blue" "$reset" "$(hostname)"
+    printf "%bHostname:%b %s\n" "$BLUE" "$RESET" "$(hostname)"
+    if [[ -f /etc/REDhat-release ]]; then
+        distro="$(< /etc/REDhat-release)"
+    elif [[ -f /etc/os-release ]]; then
+        distro="$(grep -Po "(?<=PRETTY_NAME=\").*[^\"]" /etc/os-release 2> /dev/null)"
+    fi
+    [[ -n "$distro" ]] && printf "%bVersion:%b %s\n" "$BLUE" "$RESET" "$distro"
+    [[ -f /proc/version ]] && printf "%bKernel:%b %s\n" "$BLUE" "$RESET" "$(awk '{print $3}' /proc/version)"
     product_name=/sys/devices/virtual/dmi/id/product_name
     sys_vendor=/sys/devices/virtual/dmi/id/sys_vendor
     [[ -f "$product_name" && -f "$sys_vendor" ]] && {
-        printf "%bHost Info:%b %s, %s\n" "$blue" "$reset" "$(<"$product_name")" "$(<"$sys_vendor")"; }
-    [[ -f /etc/redhat-release ]] && {
-        printf "%bVersion:%b %s (%s)\n" "$blue" "$reset" "$(< /etc/redhat-release)" \
-            "$(awk '{print $3}' /proc/version)"; }
-    printf "%bUptime:%b %s\n" "$blue" "$reset" "$(uptime)"
+        printf "%bHost Info:%b %s, %s\n" "$BLUE" "$RESET" "$(<"$sys_vendor")" "$(<"$product_name")"; }
+    printf "%bUptime:%b %s\n" "$BLUE" "$RESET" "$(uptime)"
     get_network_info
     whotf
-    get_mem_info
-    printf "%bTop 5 Processes by Memory:%b\n%s\n" "$blue" "$reset" \
-        "$(ps -eo %mem,comm,pid --sort=-%mem | head -n 6)"
-    printf "%bTop 5 Processes by CPU:%b\n%s\n" "$blue" "$reset" \
-        "$(ps -eo pcpu,comm,pid --sort=-pcpu | head -n 6)"
+    printf "%bTop 5 Processes by Memory:%b\t%bTop 5 Processes by CPU:%b\n" "$BLUE" "$RESET" "$BLUE" "$RESET"
+    paste <(ps -eo %mem,comm,pid --sort=-%mem | head -n 6) <(ps -eo %cpu,comm,pid --sort=-pcpu | head -n 6)
     check_mounts
 }
 
 check_df() {
-    local line status
+    local line
 
     while read -r line; do
         case "$line" in
-            *100%*) printf "%b%s%b\n" "$red" "$line" "$reset"; status=1 ;;
-            *9?%*) printf "%b%s%b\n" "$yellow" "$line" "$reset"; status=1 ;;
+            *100%*) mount_errors+=("${RED}${line}${RESET}") ;;
+            *9?%*) mount_errors+=("${RED}${line}${RESET}") ;;
         esac
     done < <(df "$1")
-
-    return "${status:-0}"
 }
 
 dmesg_parse() {
@@ -84,29 +83,37 @@ dmesg_parse() {
         printf "Try 'health -h' for more information.\n" >&2
     fi
 
-    [[ -n "$emerg" ]] && printf "%bemergency messages%b: %d\n" "$red" "$reset" "${#emerg[@]}"
-    [[ -n "$crit" ]] && printf "%bcritical messages%b: %d\n" "$red" "$reset" "${#crit[@]}"
-    [[ -n "$alert" ]] && printf "%balert messages%b: %d\n" "$yellow" "$reset" "${#alert[@]}"
-    [[ -n "$err" ]] && printf "%berror messages%b: %d\n" "$yellow" "$reset" "${#err[@]}"
-    [[ -n "$warn" ]] && printf "%bwarning messages%b: %d\n" "$yellow" "$reset" "${#warn[@]}"
+    [[ -n "$emerg" ]] && printf "%bemergency messages%b: %d\n" "$RED" "$RESET" "${#emerg[@]}"
+    [[ -n "$crit" ]] && printf "%bcritical messages%b: %d\n" "$RED" "$RESET" "${#crit[@]}"
+    [[ -n "$alert" ]] && printf "%balert messages%b: %d\n" "$YELLOW" "$RESET" "${#alert[@]}"
+    [[ -n "$err" ]] && printf "%berror messages%b: %d\n" "$YELLOW" "$RESET" "${#err[@]}"
+    [[ -n "$warn" ]] && printf "%bwarning messages%b: %d\n" "$YELLOW" "$RESET" "${#warn[@]}"
 }
 
 check_kernel() {
-    local current_kernel check_yum available_kernel latest_kernel
+    local check_yum current_kernel available_kernel latest_kernel
+
+    if type dnf &> /dev/null; then
+        check_yum=$(dnf list updates kernel 2>&1)
+    elif type yum &> /dev/null; then
+        check_yum=$(yum list updates kernel 2>&1)
+    else
+        printf "health: incompatible Operating System.\n" >&2
+        printf "Try 'health -h' for more information.\n" >&2; return 1
+    fi
 
     current_kernel=$(awk '{print $3}' /proc/version)
-    check_yum=$(yum list updates kernel 2>&1)
     available_kernel=$(echo "$check_yum" | awk '/kernel/{print $2}')
 
     if [[ -n "$available_kernel" ]]; then
-        printf "%bKernel version:%b (%bpending kernel updates%b)\n" "$blue" "$reset" "$yellow" "$reset"
+        printf "%bKernel version:%b (%bpending kernel updates%b)\n" "$BLUE" "$RESET" "$YELLOW" "$RESET"
         printf "  Available (yum update): \t%s\n" "$available_kernel"
     elif [[ "$check_yum" =~ "No matching Packages to list" ]]; then
         latest_kernel=$(rpm -q --last kernel | sed -n '1s/kernel-//;1s/ .*$//p')
         if [[ "$latest_kernel" == "$current_kernel" ]]; then
-            printf "%bKernel version:%b (%bup-to-date%b)\n" "$blue" "$reset" "$green" "$reset"
+            printf "%bKernel version:%b (%bup-to-date%b)\n" "$BLUE" "$RESET" "$GREEN" "$RESET"
         else
-            printf "%bKernel version:%b (%bpending kernel updates%b)\n" "$blue" "$reset" "$yellow" "$reset"
+            printf "%bKernel version:%b (%bpending kernel updates%b)\n" "$BLUE" "$RESET" "$YELLOW" "$RESET"
             printf "  Latest installed kernel: \t%s\n" "$latest_kernel"
         fi
     else
@@ -117,33 +124,35 @@ check_kernel() {
 }
 
 check_mounts() {
-    local line mounts nfs_servers mount error nfs
+    local line mounts mount_errors nfs_servers mount nfs
 
-    printf "%bMounts & File Sytems:%b\n" "$blue" "$reset"
     if [[ -f /etc/fstab ]]; then
         while read -ra line || [[ -n "${line[*]}" ]]; do
             [[ ! "${line[0]}" =~ ^# && "${line[1]}" =~ ^/ ]] && mounts+=("${line[1]}")
         done < /etc/fstab
     fi
-
+            
     if [[ -n "${mounts[*]}" ]]; then
         for mount in "${mounts[@]}"; do
             if ! findmnt "$mount" &> /dev/null; then
-                printf "%b%s is declared in fstab but not mounted\n%b" "$yellow" "$mount" "$reset"
-                error=true
+                mount_errors+=("${YELLOW}${mount} is declaRED in fstab but not mounted${RESET}")
             fi
         done
     fi
 
     if timeout 2 df &> /dev/null; then
-        check_df "-Ti" || error=true
-        check_df "-Th" || error=true
+        check_df "-Ti"
+        check_df "-Th"
     else
-        printf "%bHung mount detected%b\n" "$yellow" "$reset" >&2
-        error=true
+        mount_errors+=("${YELLOW}Hung mount detected${RESET}")
     fi
-
-    [[ -z "$error" ]] && printf "No issues detected\n"
+    
+    if [[ -n "${mount_errors[*]}" ]]; then
+        printf "%bMounts & File Sytems:%b\n" "$BLUE" "$RESET"
+        for error in "${mount_errors[@]}"; do
+            printf "  %b\n" "$error"
+        done
+    fi
 }
 
 get_network_info() {
@@ -160,18 +169,18 @@ get_network_info() {
     done < <(ip route 2> /dev/null)
 
     if [[ -n "${interfaces[*]}" ]]; then
-        printf "%bInterface(s):%b\n" "$blue" "$reset"
+        printf "%bInterface(s):%b\n" "$BLUE" "$RESET"
         for interface in "${!interfaces[@]}"; do
             printf "  %s - %s\n" "$interface" "${interfaces[$interface]}"
         done
     fi
 
     if [[ -n "$gateway" ]]; then
-        printf "%bDefault gateway:%b\n" "$blue" "$reset"
+        printf "%bDefault gateway:%b\n" "$BLUE" "$RESET"
         if ping -W1 -c1 "$gateway" &> /dev/null; then
-            printf "  %s (%breachable%b)\n" "$gateway" "$green" "$reset"
+            printf "  %s (%breachable%b)\n" "$gateway" "$GREEN" "$RESET"
         else
-            printf "  %s (%bunreachable%b)\n" "$gateway" "$yellow" "$reset"
+            printf "  %s (%bunreachable%b)\n" "$gateway" "$YELLOW" "$RESET"
         fi
     fi
 
@@ -186,30 +195,30 @@ get_network_info() {
     fi
 
     if [[ -n "${dns_servers[*]}" ]]; then
-        printf "%bDNS nameserver(s):%b\n" "$blue" "$reset"
+        printf "%bDNS nameserver(s):%b\n" "$BLUE" "$RESET"
         for dns in "${dns_servers[@]}"; do
             if nc -z "$dns" 53 &> /dev/null; then
-                printf "  %s (%breachable%b)\n" "$dns" "$green" "$reset"
+                printf "  %s (%breachable%b)\n" "$dns" "$GREEN" "$RESET"
             else
-                printf "  %s (%bpotential DNS error%b)\n" "$dns" "$yellow" "$reset"
+                printf "  %s (%bpotential DNS error%b)\n" "$dns" "$YELLOW" "$RESET"
             fi
         done
     fi
 
     while read -ra line; do
         case "${line[0]}" in
-            ^\*) ntp_servers+=("${line[1]} (${green}current best${reset})") ;;
-            ^\+) ntp_servers+=("${line[1]} (${green}combined${reset})") ;;
-            ^-) ntp_servers+=("${line[1]} (${green}not combined${reset})") ;;
-            ^x) ntp_servers+=("${line[1]} (${yellow}may be in error${reset})") ;;
-            ^~) ntp_servers+=("${line[1]} (${red}too variable${reset})") ;;
-            ^\?) ntp_servers+=("${line[1]} (${red}unusable${reset})") ;;
+            ^\*) ntp_servers+=("${line[1]} (${GREEN}current best${RESET})") ;;
+            ^\+) ntp_servers+=("${line[1]} (${GREEN}combined${RESET})") ;;
+            ^-) ntp_servers+=("${line[1]} (${GREEN}not combined${RESET})") ;;
+            ^x) ntp_servers+=("${line[1]} (${YELLOW}may be in error${RESET})") ;;
+            ^~) ntp_servers+=("${line[1]} (${RED}too variable${RESET})") ;;
+            ^\?) ntp_servers+=("${line[1]} (${RED}unusable${RESET})") ;;
             *) ;;
         esac
     done < <(chronyc -n sources 2> /dev/null)
 
     if [[ -n "${ntp_servers[*]}" ]]; then
-        printf "%bNTP server(s):%b\n" "$blue" "$reset"
+        printf "%bNTP server(s):%b\n" "$BLUE" "$RESET"
         for ntp in "${ntp_servers[@]}"; do
             printf "  %b\n" "$ntp"
         done
@@ -226,12 +235,12 @@ get_network_info() {
     fi
 
     if [[ -n "${nfs_servers[*]}" ]]; then
-        printf "%bNFS Server(s):%b\n" "$blue" "$reset"
+        printf "%bNFS Server(s):%b\n" "$BLUE" "$RESET"
         for nfs in "${!nfs_servers[@]}"; do
             if timeout 1 showmount "$nfs" &> /dev/null; then
-                printf "  %s (%breachable%b)\n" "$nfs" "$green" "$reset"
+                printf "  %s (%breachable%b)\n" "$nfs" "$GREEN" "$RESET"
             else
-                printf "  %s (%bpotential NFS error%b)\n" "$nfs" "$yellow" "$reset"
+                printf "  %s (%bpotential NFS error%b)\n" "$nfs" "$YELLOW" "$RESET"
             fi
         done
     fi
@@ -256,24 +265,28 @@ file_vulnerability() {
     world_write="$(find "$dir" ! -type l -perm -002)"
     setbits="$(find "$dir" -perm -4000 -o -perm -2000)"
 
-    [[ -n "$world_write" ]] && printf "%bWorld writable files:%b\n%s\n" "$blue" "$reset" "$world_write"
-    [[ -n "$setbits" ]] && printf "%bFiles with setgids/setuids:%b\n%s\n" "$blue" "$reset" "$setbits"
+    [[ -n "$world_write" ]] && printf "%bWorld writable files:%b\n%s\n" "$BLUE" "$RESET" "$world_write"
+    [[ -n "$setbits" ]] && printf "%bFiles with setgids/setuids:%b\n%s\n" "$BLUE" "$RESET" "$setbits"
 }
 
 whotf() {
-    local user stats full_name
+    local who_info user stats full_name
 
-    printf "%bUsers Currently Logged in:%b\n" "$blue" "$reset"
-    while read -r user stats; do
-        full_name=$(getent passwd "$user" | awk -F: '{print $5}')
-        printf "%-32.32s %s (%s)\n" "${full_name:-$user}" "$stats" "$user"
-    done < <(who)
+    readarray -t who_info < <(who)
+
+    if [[ -n "${who_info[*]}" ]]; then
+        printf "%bUsers Currently Logged in:%b\n" "$BLUE" "$RESET"
+        while read -r user stats; do
+            full_name=$(getent passwd "$user" | awk -F: '{print $5}')
+            printf "%-32.32s %s (%s)\n" "${full_name:-$user}" "$stats" "$user"
+        done <<< "${who_info[@]}"
+    fi
 }
 
 get_mem_info() {
     local mem_total mem_free buffers cached swap_total swap_free mem_percent swap_percent line
 
-    printf "%bMemory Usage:%b\n" "$blue" "$reset"
+    printf "%bMemory Usage:%b\n" "$BLUE" "$RESET"
     if [[ -f /proc/meminfo ]]; then
         while read -ra line || [[ -n "${line[*]}" ]]; do
             case "${line[0]}" in
@@ -292,14 +305,14 @@ get_mem_info() {
             swap_percent=$(( ((swap_total - swap_free) * 100) / swap_total ))
 
         printf "%20s %10s %11s %11s %11s %11s %11s\n" \
-            "total" "used" "free" "shared"  "buff/cache" "available" "used%"
+            "total" "used" "free" "shaRED"  "buff/cache" "available" "used%"
 
         while read -ra line; do
             case "${line[0]}" in
                 Mem:)
                     if (( mem_percent >= 90 )); then
                         printf "%s %15s %10s %11s %11s %11s %11s %b%11s%b\n" \
-                            "${line[@]}" "$red" "${mem_percent:-0}%" "$reset"
+                            "${line[@]}" "$RED" "${mem_percent:-0}%" "$RESET"
                     else
                         printf "%s %15s %10s %11s %11s %11s %11s %11s\n" \
                             "${line[@]}" "${mem_percent:-0}%"
@@ -309,7 +322,7 @@ get_mem_info() {
                 Swap:)
                     if (( swap_percent >= 90 )); then
                         printf "%s %14s %10s %11s %b%47s%b\n" \
-                            "${line[@]}" "$red" "${swap_percent:-0}%" "$reset"
+                            "${line[@]}" "$RED" "${swap_percent:-0}%" "$RESET"
                     else
                         printf "%s %14s %10s %11s %47s\n" \
                             "${line[@]}" "${swap_percent:-0}%"
@@ -330,7 +343,7 @@ get_args() {
             e|f|k|o|s|u|z) args_array+=("$option") ;;
             h) usage; exit 0 ;;
             r) ssh -qt "$OPTARG" "bash -s" < "$0" ;;
-            v) printf "%s\n" "$version"; exit 0 ;;
+            v) printf "%s\n" "$VERSION"; exit 0 ;;
             w) args_array+=("$option"); user="$OPTARG" ;;
             ?)
                 printf "health: invalid option -- '%s'\n" "$OPTARG" >&2
@@ -355,11 +368,11 @@ get_args() {
 }
 
 main() {
-    reset='\033[0m'
-    red='\033[0;31m'
-    green='\033[0;32m'
-    yellow='\033[0;33m'
-    blue='\033[0;34m'
+    RESET='\033[0m'
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[0;33m'
+    BLUE='\033[0;34m'
 
     if [[ "$#" -eq 0 ]]; then
         health; exit 0
@@ -368,14 +381,16 @@ main() {
     fi
 
     for arg in "${args_array[@]}"; do
-        [[ "$arg" == "e" ]] && dmesg_parse
-        [[ "$arg" == "f" ]] && find "$dir" -xdev -type f -print0 | xargs -0 du -Sh | sort -rh | head
-        [[ "$arg" == "k" ]] && check_kernel
-        [[ "$arg" == "o" ]] && users_with_open_files
-        [[ "$arg" == "s" ]] && file_vulnerability
-        [[ "$arg" == "u" ]] && find "$dir" -xdev -printf '%h\n' | sort | uniq -c | sort -rn | head
-        [[ "$arg" == "w" ]] && getent passwd "$user"
-        [[ "$arg" == "z" ]] && ps axo stat | awk 'BEGIN{i=0}/Z/{i++;}END{print i}'
+        case "$arg" in
+            e) dmesg_parse ;;
+            f) find "$dir" -xdev -type f -print0 | xargs -0 du -Sh | sort -rh | head ;;
+            k) check_kernel ;;
+            o) users_with_open_files ;;
+            s) file_vulnerability ;;
+            u) find "$dir" -xdev -printf '%h\n' | sort | uniq -c | sort -rn | head ;;
+            w) getent passwd "$user" ;;
+            z) ps axo stat | awk 'BEGIN{i=0}/Z/{i++;}END{print i}' ;;
+        esac
     done
 
     return 0
