@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly VERSION="Health version: 1.10.0 - October 3, 2024"
+readonly VERSION="Health version: 1.10.1 - October 4, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -270,17 +270,13 @@ file_vulnerability() {
 }
 
 whotf() {
-    local who_info user stats full_name
+    local user stats full_name
 
-    readarray -t who_info < <(who)
-
-    if [[ -n "${who_info[*]}" ]]; then
-        printf "%bUsers Currently Logged in:%b\n" "$BLUE" "$RESET"
-        while read -r user stats; do
-            full_name=$(getent passwd "$user" | awk -F: '{print $5}')
-            printf "%-32.32s %s (%s)\n" "${full_name:-$user}" "$stats" "$user"
-        done <<< "${who_info[@]}"
-    fi
+    printf "%bUsers Currently Logged in:%b\n" "$BLUE" "$RESET"
+    while read -r user stats; do
+        full_name=$(getent passwd "$user" | awk -F: '{print $5}')
+        printf "%-28.28s %s (%s)\n" "${full_name:-$user}" "$stats" "$user"
+    done < <(who)
 }
 
 get_mem_info() {
