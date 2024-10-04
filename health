@@ -41,8 +41,8 @@ health() {
     local distro product_name sys_vendor
 
     printf "%bHostname:%b %s\n" "$BLUE" "$RESET" "$(hostname)"
-    if [[ -f /etc/REDhat-release ]]; then
-        distro="$(< /etc/REDhat-release)"
+    if [[ -f /etc/redhat-release ]]; then
+        distro="$(< /etc/redhat-release)"
     elif [[ -f /etc/os-release ]]; then
         distro="$(grep -Po "(?<=PRETTY_NAME=\").*[^\"]" /etc/os-release 2> /dev/null)"
     fi
@@ -103,7 +103,7 @@ check_kernel() {
     fi
 
     current_kernel=$(awk '{print $3}' /proc/version)
-    available_kernel=$(echo "$check_yum" | awk '/kernel/{print $2}')
+    available_kernel=$(awk '/kernel/{print $2}' <<< "$check_yum")
 
     if [[ -n "$available_kernel" ]]; then
         printf "%bKernel version:%b (%bpending kernel updates%b)\n" "$BLUE" "$RESET" "$YELLOW" "$RESET"
@@ -135,7 +135,7 @@ check_mounts() {
     if [[ -n "${mounts[*]}" ]]; then
         for mount in "${mounts[@]}"; do
             if ! findmnt "$mount" &> /dev/null; then
-                mount_errors+=("${YELLOW}${mount} is declaRED in fstab but not mounted${RESET}")
+                mount_errors+=("${YELLOW}${mount} is declared in fstab but not mounted${RESET}")
             fi
         done
     fi
@@ -357,13 +357,11 @@ get_args() {
        dir="$(pwd)"
     elif [[ ! -d "$1" ]]; then
         printf "'%s': not a valid path.\n" "$1" >&2; exit 2
+    elif [[ -n "${args_array[*]}" ]]; then
+        dir="$1"
     else
-        if [[ -n "${args_array[*]}" ]]; then
-            dir="$1"
-        else
-            printf "health: invalid option -- '%s'\n" "$*" >&2
-            printf "Try 'health -h' for more information.\n" >&2; exit 2
-        fi
+        printf "health: invalid option -- '%s'\n" "$*" >&2
+        printf "Try 'health -h' for more information.\n" >&2; exit 2
     fi
 }
 
