@@ -5,7 +5,7 @@
 #
 # Copyright (C) 2024 Zac Piatt
 #
-# This program is free software: you can REDistribute it and/or modify
+# This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly VERSION="Health version: 1.10.1 - October 4, 2024"
+readonly VERSION="Health version: 1.10.2 - October 16, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -93,31 +93,19 @@ dmesg_parse() {
 check_kernel() {
     local check_yum current_kernel available_kernel latest_kernel
 
-    if type dnf &> /dev/null; then
-        check_yum=$(dnf list updates kernel 2>&1)
-    elif type yum &> /dev/null; then
-        check_yum=$(yum list updates kernel 2>&1)
-    else
-        printf "health: incompatible Operating System.\n" >&2
-        printf "Try 'health -h' for more information.\n" >&2; return 1
-    fi
-
+    check_yum=$(yum list updates kernel)
     current_kernel=$(awk '{print $3}' /proc/version)
     available_kernel=$(awk '/kernel/{print $2}' <<< "$check_yum")
+    latest_kernel=$(rpm -q --last kernel | sed -n '1s/kernel-//;1s/ .*$//p')
 
     if [[ -n "$available_kernel" ]]; then
-        printf "%bKernel version:%b (%bpending kernel updates%b)\n" "$BLUE" "$RESET" "$YELLOW" "$RESET"
-        printf "  Available (yum update): \t%s\n" "$available_kernel"
-    elif [[ "$check_yum" =~ "No matching Packages to list" ]]; then
-        latest_kernel=$(rpm -q --last kernel | sed -n '1s/kernel-//;1s/ .*$//p')
-        if [[ "$latest_kernel" == "$current_kernel" ]]; then
-            printf "%bKernel version:%b (%bup-to-date%b)\n" "$BLUE" "$RESET" "$GREEN" "$RESET"
-        else
-            printf "%bKernel version:%b (%bpending kernel updates%b)\n" "$BLUE" "$RESET" "$YELLOW" "$RESET"
-            printf "  Latest installed kernel: \t%s\n" "$latest_kernel"
-        fi
+        printf "%bKernel version:%b (%bpending kernel update%b)\n" "$BLUE" "$RESET" "$YELLOW" "$RESET"
+        printf "  Available (download): \t%s\n" "$available_kernel"
+    elif [[ "$latest_kernel" == "$current_kernel" ]]; then
+        printf "%bKernel version:%b (%bup-to-date%b)\n" "$BLUE" "$RESET" "$GREEN" "$RESET"
     else
-        printf "%s\n" "$check_yum" >&2; return 1
+        printf "%bKernel version:%b (%bpending kernel update%b)\n" "$BLUE" "$RESET" "$YELLOW" "$RESET"
+        printf "  Available (installed): \t%s\n" "$latest_kernel"
     fi
 
     printf "  Current running kernel: \t%s\n" "$current_kernel"
@@ -301,7 +289,7 @@ get_mem_info() {
             swap_percent=$(( ((swap_total - swap_free) * 100) / swap_total ))
 
         printf "%20s %10s %11s %11s %11s %11s %11s\n" \
-            "total" "used" "free" "shaRED"  "buff/cache" "available" "used%"
+            "total" "used" "free" "shared"  "buff/cache" "available" "used%"
 
         while read -ra line; do
             case "${line[0]}" in

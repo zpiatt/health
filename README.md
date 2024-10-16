@@ -25,7 +25,7 @@ If you're using RHEL 7 or later and encounter issues or have suggestions for rou
 ### Suggested Usage:
   - To run this check once daily during the first login, you can add the following line to your `.bashrc`:
     ```bash
-    [[ $(last "$USER" | awk 'NR==2{print$6}) != $(date +%-d) ]] && health
+    [[ $(last "$USER" | awk 'NR==2{print$6}') != $(date +%-d) ]] && health
     ```
 
 ### More: \[[Installation](https://github.com/zpiatt/health/wiki/Installation)\] \[[Wiki](https://github.com/zpiatt/health/wiki)\]
