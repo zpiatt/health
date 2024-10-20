@@ -5,7 +5,7 @@
 #
 # Copyright (C) 2024 Zac Piatt
 #
-# This program is free software: you can REDistribute it and/or modify
+# This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly VERSION="Health version: 1.10.1 - October 4, 2024"
+readonly VERSION="Health version: 1.10.2 - October 20, 2024"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -55,6 +55,7 @@ health() {
     printf "%bUptime:%b %s\n" "$BLUE" "$RESET" "$(uptime)"
     get_network_info
     whotf
+    get_mem_info
     printf "%bTop 5 Processes by Memory:%b\t%bTop 5 Processes by CPU:%b\n" "$BLUE" "$RESET" "$BLUE" "$RESET"
     paste <(ps -eo %mem,comm,pid --sort=-%mem | head -n 6) <(ps -eo %cpu,comm,pid --sort=-pcpu | head -n 6)
     check_mounts
@@ -301,7 +302,7 @@ get_mem_info() {
             swap_percent=$(( ((swap_total - swap_free) * 100) / swap_total ))
 
         printf "%20s %10s %11s %11s %11s %11s %11s\n" \
-            "total" "used" "free" "shaRED"  "buff/cache" "available" "used%"
+            "total" "used" "free" "shared"  "buff/cache" "available" "used%"
 
         while read -ra line; do
             case "${line[0]}" in
