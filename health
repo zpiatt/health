@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly VERSION="Health version: 1.10.2 - October 20, 2024"
+readonly VERSION="Health version: 1.10.3 - January 26, 2025"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -132,7 +132,7 @@ check_mounts() {
             [[ ! "${line[0]}" =~ ^# && "${line[1]}" =~ ^/ ]] && mounts+=("${line[1]}")
         done < /etc/fstab
     fi
-            
+
     if [[ -n "${mounts[*]}" ]]; then
         for mount in "${mounts[@]}"; do
             if ! findmnt "$mount" &> /dev/null; then
@@ -147,7 +147,7 @@ check_mounts() {
     else
         mount_errors+=("${YELLOW}Hung mount detected${RESET}")
     fi
-    
+
     if [[ -n "${mount_errors[*]}" ]]; then
         printf "%bMounts & File Sytems:%b\n" "$BLUE" "$RESET"
         for error in "${mount_errors[@]}"; do
@@ -271,13 +271,14 @@ file_vulnerability() {
 }
 
 whotf() {
-    local user stats full_name
+    local users
 
-    printf "%bUsers Currently Logged in:%b\n" "$BLUE" "$RESET"
-    while read -r user stats; do
-        full_name=$(getent passwd "$user" | awk -F: '{print $5}')
-        printf "%-28.28s %s (%s)\n" "${full_name:-$user}" "$stats" "$user"
-    done < <(who)
+    readarray -t users < <(who)
+
+    if [[ -n "${users[*]}" ]]; then
+        printf "%bUsers Currently Logged in:%b\n" "$BLUE" "$RESET"
+        printf "%s\n" "${users[@]}"
+    fi
 }
 
 get_mem_info() {
