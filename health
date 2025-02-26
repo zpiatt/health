@@ -3,7 +3,7 @@
 # Health: A command-line RHEL system check tool written in bash 3.2+.
 # https://github.com/zpiatt/health
 #
-# Copyright (C) 2024 Zac Piatt
+# Copyright (C) 2025 Zac Piatt
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,16 +18,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly VERSION="Health version: 1.10.3 - January 26, 2025"
+readonly VERSION="Health version: 1.11.0 - February 26, 2025"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
-    printf "Display general system statisics and check for common errors.\n\n"
+    printf "Display general system statistics and check for common errors.\n\n"
     printf "  -e,   parse dmesg for alerts, errors, etc. (may require sudo)\n"
     printf "  -f,   report 10 largest files in specified directory tree\n"
     printf "  -h,   display this help and exit\n"
-    printf "  -k,   check for available kernel updates (requires [yum/dnf])\n"
     printf "  -o,   show users with open files (may require sudo)\n"
+    printf "  -p,   display public IP information, if available\n"
     printf "  -r,   display health on remote host\n"
     printf "  -s,   search for common file permission vulnerabilities\n"
     printf "  -u,   report 10 largest directories by inode usage\n"
@@ -41,11 +41,7 @@ health() {
     local distro product_name sys_vendor
 
     printf "%bHostname:%b %s\n" "$BLUE" "$RESET" "$(hostname)"
-    if [[ -f /etc/redhat-release ]]; then
-        distro="$(< /etc/redhat-release)"
-    elif [[ -f /etc/os-release ]]; then
-        distro="$(grep -Po "(?<=PRETTY_NAME=\").*[^\"]" /etc/os-release 2> /dev/null)"
-    fi
+    distro="$(< /etc/redhat-release)"
     [[ -n "$distro" ]] && printf "%bVersion:%b %s\n" "$BLUE" "$RESET" "$distro"
     [[ -f /proc/version ]] && printf "%bKernel:%b %s\n" "$BLUE" "$RESET" "$(awk '{print $3}' /proc/version)"
     product_name=/sys/devices/virtual/dmi/id/product_name
@@ -91,39 +87,6 @@ dmesg_parse() {
     [[ -n "$warn" ]] && printf "%bwarning messages%b: %d\n" "$YELLOW" "$RESET" "${#warn[@]}"
 }
 
-check_kernel() {
-    local check_yum current_kernel available_kernel latest_kernel
-
-    if type dnf &> /dev/null; then
-        check_yum=$(dnf list updates kernel 2>&1)
-    elif type yum &> /dev/null; then
-        check_yum=$(yum list updates kernel 2>&1)
-    else
-        printf "health: incompatible Operating System.\n" >&2
-        printf "Try 'health -h' for more information.\n" >&2; return 1
-    fi
-
-    current_kernel=$(awk '{print $3}' /proc/version)
-    available_kernel=$(awk '/kernel/{print $2}' <<< "$check_yum")
-
-    if [[ -n "$available_kernel" ]]; then
-        printf "%bKernel version:%b (%bpending kernel updates%b)\n" "$BLUE" "$RESET" "$YELLOW" "$RESET"
-        printf "  Available (yum update): \t%s\n" "$available_kernel"
-    elif [[ "$check_yum" =~ "No matching Packages to list" ]]; then
-        latest_kernel=$(rpm -q --last kernel | sed -n '1s/kernel-//;1s/ .*$//p')
-        if [[ "$latest_kernel" == "$current_kernel" ]]; then
-            printf "%bKernel version:%b (%bup-to-date%b)\n" "$BLUE" "$RESET" "$GREEN" "$RESET"
-        else
-            printf "%bKernel version:%b (%bpending kernel updates%b)\n" "$BLUE" "$RESET" "$YELLOW" "$RESET"
-            printf "  Latest installed kernel: \t%s\n" "$latest_kernel"
-        fi
-    else
-        printf "%s\n" "$check_yum" >&2; return 1
-    fi
-
-    printf "  Current running kernel: \t%s\n" "$current_kernel"
-}
-
 check_mounts() {
     local line mounts mount_errors nfs_servers mount nfs
 
@@ -149,7 +112,7 @@ check_mounts() {
     fi
 
     if [[ -n "${mount_errors[*]}" ]]; then
-        printf "%bMounts & File Sytems:%b\n" "$BLUE" "$RESET"
+        printf "%bMounts & File Systems:%b\n" "$BLUE" "$RESET"
         for error in "${mount_errors[@]}"; do
             printf "  %b\n" "$error"
         done
@@ -185,14 +148,8 @@ get_network_info() {
         fi
     fi
 
-    if grep "^DNS=" /etc/systemd/resolved.conf &> /dev/null; then
-        while read -ra line || [[ -n "${line[*]}" ]]; do
-            [[ "${line[0]}" =~ ^DNS= ]] && dns_servers=("${line[@]#DNS=}")
-        done < /etc/systemd/resolved.conf
-    elif [[ -f /etc/resolv.conf ]]; then
-        while read -ra line || [[ -n "${line[*]}" ]]; do
-            [[ "${line[0]}" =~ ^nameserver ]] && dns_servers+=("${line[1]}")
-        done < /etc/resolv.conf
+    if type nmcli &> /dev/null; then
+        readarray -t dns_servers < <(nmcli device show | awk '/DNS/{print $2}')
     fi
 
     if [[ -n "${dns_servers[*]}" ]]; then
@@ -333,12 +290,22 @@ get_mem_info() {
     fi
 }
 
+get_public_ip() {
+    local public_ip_info
+
+    readarray -t public_ip_info < <(curl -s ipinfo.io | jq -r '.ip, .hostname, .org')
+
+    [[ -n "${public_ip_info[0]}" ]] && printf "%bPublic IP:%b %s\n" "$BLUE" "$RESET" "${public_ip_info[0]}"
+    [[ -n "${public_ip_info[1]}" ]] && printf "%bHostname:%b %s\n" "$BLUE" "$RESET" "${public_ip_info[1]}"
+    [[ -n "${public_ip_info[2]}" ]] && printf "%bISP:%b %s\n" "$BLUE" "$RESET" "${public_ip_info[2]}"
+}
+
 get_args() {
     local option
 
-    while getopts ':efhkor:suvw:z' option; do
+    while getopts ':efhopr:suvw:z' option; do
         case "$option" in
-            e|f|k|o|s|u|z) args_array+=("$option") ;;
+            e|f|o|p|s|u|z) args_array+=("$option") ;;
             h) usage; exit 0 ;;
             r) ssh -qt "$OPTARG" "bash -s" < "$0" ;;
             v) printf "%s\n" "$VERSION"; exit 0 ;;
@@ -380,8 +347,8 @@ main() {
         case "$arg" in
             e) dmesg_parse ;;
             f) find "$dir" -xdev -type f -print0 | xargs -0 du -Sh | sort -rh | head ;;
-            k) check_kernel ;;
             o) users_with_open_files ;;
+            p) get_public_ip ;;
             s) file_vulnerability ;;
             u) find "$dir" -xdev -printf '%h\n' | sort | uniq -c | sort -rn | head ;;
             w) getent passwd "$user" ;;

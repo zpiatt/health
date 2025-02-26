@@ -6,13 +6,12 @@
 
 Health is a command-line system status check tool written in `bash 3.2+`. Designed for Red Hat Enterprise Linux (RHEL) environments, Health provides an easy way to display general system statistics, scrutinize file systems for common errors, and check for a variety of other typical system issues.
 
-### Status Update:
-  - __NOTE__: RHEL 6 ELS (Extended Life-cycle Support) ended 30JUNE2024. Most of `health` *should* continue to work, however, I will not make updates specifically maintain support for RHEL 6.
-
 ### Recently added:
-  - Refactored `whotf` function. Function no longer attempts to parse "full name" field from `passwd`.
-      - In practice, this field isn't always populated and resulted in inconsistent output; the `-w` option remains available to quickly display complete `passwd` entry of a given user.
-      - `whotf` won't echo anything if there are no login sessions (i.e. VSCode logins only, etc.)
+  - Added `-p` to display Public IP Information.
+    - This option attempts to `curl` and parse the output from `ipinfo.io` and requires internet connectivity.
+  - Refactored `get_network_info` parsing of DNS information.
+    - In practice, there's too much variation in where **correct** DNS server information is found in files (`/etc/resolv.conf`, `/etc/systemd/resolved.conf`, `/etc/NetworkManager/system-connections/`, etc.). The update leverages `nmcli` which *should* be available in RHEL 7 and later.
+  - Added RHEL life cycle support information to `man` page.
 
 If you're using RHEL 7 or later and encounter issues or have suggestions for routine error checks, please feel free to reach out!
 
