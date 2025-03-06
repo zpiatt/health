@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly VERSION="Health version: 1.11.0 - February 26, 2025"
+readonly VERSION="Health version: 1.11.1 - March 6, 2025"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -26,11 +26,11 @@ usage() {
     printf "  -e,   parse dmesg for alerts, errors, etc. (may require sudo)\n"
     printf "  -f,   report 10 largest files in specified directory tree\n"
     printf "  -h,   display this help and exit\n"
+    printf "  -i,   report 10 largest directories by inode usage\n"
     printf "  -o,   show users with open files (may require sudo)\n"
     printf "  -p,   display public IP information, if available\n"
     printf "  -r,   display health on remote host\n"
     printf "  -s,   search for common file permission vulnerabilities\n"
-    printf "  -u,   report 10 largest directories by inode usage\n"
     printf "  -v,   display version number and exit\n"
     printf "  -w,   show passwd info for specified user\n"
     printf "  -z,   display zombie process count, if any\n\n"
@@ -148,9 +148,7 @@ get_network_info() {
         fi
     fi
 
-    if type nmcli &> /dev/null; then
-        readarray -t dns_servers < <(nmcli device show | awk '/DNS/{print $2}')
-    fi
+    readarray -t dns_servers < <(nmcli device show 2> /dev/null | awk '/DNS/{print $2}')
 
     if [[ -n "${dns_servers[*]}" ]]; then
         printf "%bDNS nameserver(s):%b\n" "$BLUE" "$RESET"
@@ -303,9 +301,9 @@ get_public_ip() {
 get_args() {
     local option
 
-    while getopts ':efhopr:suvw:z' option; do
+    while getopts ':efhiopr:svw:z' option; do
         case "$option" in
-            e|f|o|p|s|u|z) args_array+=("$option") ;;
+            e|f|i|o|p|s|z) args_array+=("$option") ;;
             h) usage; exit 0 ;;
             r) ssh -qt "$OPTARG" "bash -s" < "$0" ;;
             v) printf "%s\n" "$VERSION"; exit 0 ;;
@@ -347,10 +345,10 @@ main() {
         case "$arg" in
             e) dmesg_parse ;;
             f) find "$dir" -xdev -type f -print0 | xargs -0 du -Sh | sort -rh | head ;;
+            i) find "$dir" -xdev -printf '%h\n' | sort | uniq -c | sort -rn | head ;;
             o) users_with_open_files ;;
             p) get_public_ip ;;
             s) file_vulnerability ;;
-            u) find "$dir" -xdev -printf '%h\n' | sort | uniq -c | sort -rn | head ;;
             w) getent passwd "$user" ;;
             z) ps axo stat | awk 'BEGIN{i=0}/Z/{i++;}END{print i}' ;;
         esac
