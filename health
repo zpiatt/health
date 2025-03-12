@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly VERSION="Health version: 1.11.1 - March 6, 2025"
+readonly VERSION="Health version: 1.11.2 - March 12, 2025"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -63,7 +63,7 @@ check_df() {
     while read -r line; do
         case "$line" in
             *100%*) mount_errors+=("${RED}${line}${RESET}") ;;
-            *9?%*) mount_errors+=("${RED}${line}${RESET}") ;;
+            *9?%*) mount_errors+=("${YELLOW}${line}${RESET}") ;;
         esac
     done < <(df "$1")
 }
@@ -80,11 +80,11 @@ dmesg_parse() {
         printf "Try 'health -h' for more information.\n" >&2
     fi
 
-    [[ -n "$emerg" ]] && printf "%bemergency messages%b: %d\n" "$RED" "$RESET" "${#emerg[@]}"
-    [[ -n "$crit" ]] && printf "%bcritical messages%b: %d\n" "$RED" "$RESET" "${#crit[@]}"
-    [[ -n "$alert" ]] && printf "%balert messages%b: %d\n" "$YELLOW" "$RESET" "${#alert[@]}"
-    [[ -n "$err" ]] && printf "%berror messages%b: %d\n" "$YELLOW" "$RESET" "${#err[@]}"
-    [[ -n "$warn" ]] && printf "%bwarning messages%b: %d\n" "$YELLOW" "$RESET" "${#warn[@]}"
+    [[ -n "${emerg[*]}" ]] && printf "%bemergency messages%b: %d\n" "$RED" "$RESET" "${#emerg[@]}"
+    [[ -n "${crit[*]}" ]] && printf "%bcritical messages%b: %d\n" "$RED" "$RESET" "${#crit[@]}"
+    [[ -n "${alert[*]}" ]] && printf "%balert messages%b: %d\n" "$YELLOW" "$RESET" "${#alert[@]}"
+    [[ -n "${err[*]}" ]] && printf "%berror messages%b: %d\n" "$YELLOW" "$RESET" "${#err[@]}"
+    [[ -n "${warn[*]}" ]] && printf "%bwarning messages%b: %d\n" "$YELLOW" "$RESET" "${#warn[@]}"
 }
 
 check_mounts() {
