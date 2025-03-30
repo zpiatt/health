@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly VERSION="Health version: 1.11.2 - March 12, 2025"
+readonly VERSION="Health version: 1.11.3 - March 29, 2025"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -148,12 +148,12 @@ get_network_info() {
         fi
     fi
 
-    readarray -t dns_servers < <(nmcli device show 2> /dev/null | awk '/DNS/{print $2}')
+    readarray -t dns_servers < <(nmcli device show 2> /dev/null | awk '/DNS/ && !x[$2]++ {print $2}')
 
     if [[ -n "${dns_servers[*]}" ]]; then
         printf "%bDNS nameserver(s):%b\n" "$BLUE" "$RESET"
         for dns in "${dns_servers[@]}"; do
-            if nc -z "$dns" 53 &> /dev/null; then
+            if ping -W1 -c1 "$dns" &> /dev/null; then
                 printf "  %s (%breachable%b)\n" "$dns" "$GREEN" "$RESET"
             else
                 printf "  %s (%bpotential DNS error%b)\n" "$dns" "$YELLOW" "$RESET"
