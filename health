@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly VERSION="Health version: 1.11.3 - March 29, 2025"
+readonly VERSION="Health version: 1.11.4 - July 14, 2025"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -38,14 +38,12 @@ usage() {
 }
 
 health() {
-    local distro product_name sys_vendor
+    local product_name=/sys/devices/virtual/dmi/id/product_name
+    local sys_vendor=/sys/devices/virtual/dmi/id/sys_vendor
 
     printf "%bHostname:%b %s\n" "$BLUE" "$RESET" "$(hostname)"
-    distro="$(< /etc/redhat-release)"
-    [[ -n "$distro" ]] && printf "%bVersion:%b %s\n" "$BLUE" "$RESET" "$distro"
+    [[ -f /etc/redhat-release ]] && printf "%bVersion:%b %s\n" "$BLUE" "$RESET" "$(</etc/redhat-release)"
     [[ -f /proc/version ]] && printf "%bKernel:%b %s\n" "$BLUE" "$RESET" "$(awk '{print $3}' /proc/version)"
-    product_name=/sys/devices/virtual/dmi/id/product_name
-    sys_vendor=/sys/devices/virtual/dmi/id/sys_vendor
     [[ -f "$product_name" && -f "$sys_vendor" ]] && {
         printf "%bHost Info:%b %s, %s\n" "$BLUE" "$RESET" "$(<"$sys_vendor")" "$(<"$product_name")"; }
     printf "%bUptime:%b %s\n" "$BLUE" "$RESET" "$(uptime)"
@@ -71,13 +69,10 @@ check_df() {
 dmesg_parse() {
     local level emerg crit alert err warn
 
-    if dmesg -V &> /dev/null; then
+    if dmesg -V > /dev/null; then
         for level in emerg crit alert err warn; do
             readarray -t "$level" < <(dmesg -l "$level")
         done
-    else
-        printf "health: dmesg version insufficient\n" >&2
-        printf "Try 'health -h' for more information.\n" >&2
     fi
 
     [[ -n "${emerg[*]}" ]] && printf "%bemergency messages%b: %d\n" "$RED" "$RESET" "${#emerg[@]}"
