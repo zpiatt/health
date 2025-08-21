@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly VERSION="Health version: 1.11.5 - July 16, 2025"
+readonly VERSION="Health version: 1.12.0 - August 21, 2025"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -32,25 +32,27 @@ usage() {
     printf "  -r,   display health on remote host\n"
     printf "  -s,   search for common file permission vulnerabilities\n"
     printf "  -v,   display version number and exit\n"
-    printf "  -w,   show passwd info for specified user\n"
+    printf "  -w,   show passwd entry for specified user\n"
     printf "  -z,   display zombie process count, if any\n\n"
     printf "Full documentation <https://github.com/zpiatt/health>\n"
 }
 
 health() {
-    local product_name=/sys/devices/virtual/dmi/id/product_name
-    local sys_vendor=/sys/devices/virtual/dmi/id/sys_vendor
+    local product_name sys_vendor
 
-    printf "%bHostname:%b %s\n" "$BLUE" "$RESET" "$(hostname)"
-    [[ -f /etc/redhat-release ]] && printf "%bVersion:%b %s\n" "$BLUE" "$RESET" "$(</etc/redhat-release)"
-    [[ -f /proc/version ]] && printf "%bKernel:%b %s\n" "$BLUE" "$RESET" "$(awk '{print $3}' /proc/version)"
+    product_name="/sys/devices/virtual/dmi/id/product_name"
+    sys_vendor="/sys/devices/virtual/dmi/id/sys_vendor"
+
+    printf "%bHostname:%b %s\n" "$blue" "$reset" "$HOSTNAME"
+    [[ -f /etc/redhat-release ]] && printf "%bVersion:%b %s\n" "$blue" "$reset" "$(</etc/redhat-release)"
+    [[ -f /proc/version ]] && printf "%bKernel:%b %s\n" "$blue" "$reset" "$(awk '{print $3}' /proc/version)"
     [[ -f "$product_name" && -f "$sys_vendor" ]] && {
-        printf "%bHost Info:%b %s, %s\n" "$BLUE" "$RESET" "$(<"$sys_vendor")" "$(<"$product_name")"; }
-    printf "%bUptime:%b %s\n" "$BLUE" "$RESET" "$(uptime)"
+        printf "%bHost Info:%b %s, %s\n" "$blue" "$reset" "$(<"$sys_vendor")" "$(<"$product_name")"; }
+    printf "%bUptime:%b %s\n" "$blue" "$reset" "$(uptime)"
     get_network_info
     whotf
     get_mem_info
-    printf "%bTop 5 Processes by Memory:%b\t%bTop 5 Processes by CPU:%b\n" "$BLUE" "$RESET" "$BLUE" "$RESET"
+    printf "%bTop 5 Processes by Memory:%b\t%bTop 5 Processes by CPU:%b\n" "$blue" "$reset" "$blue" "$reset"
     paste <(ps -eo %mem,comm,pid --sort=-%mem | head -n 6) <(ps -eo %cpu,comm,pid --sort=-pcpu | head -n 6)
     check_mounts
 }
@@ -60,14 +62,16 @@ check_df() {
 
     while read -r line; do
         case "$line" in
-            *100%*) mount_errors+=("${RED}${line}${RESET}") ;;
-            *9?%*) mount_errors+=("${YELLOW}${line}${RESET}") ;;
+            *100%*) mount_errors+=("${red}${line}${reset}") ;;
+            *9?%*) mount_errors+=("${yellow}${line}${reset}") ;;
+            *) continue ;;
         esac
     done < <(df "$1")
 }
 
 dmesg_parse() {
-    local level emerg crit alert err warn
+    local level
+    declare -a emerg crit alert err warn
 
     if dmesg -V > /dev/null; then
         for level in emerg crit alert err warn; do
@@ -75,15 +79,16 @@ dmesg_parse() {
         done
     fi
 
-    [[ -n "${emerg[*]}" ]] && printf "%bemergency messages%b: %d\n" "$RED" "$RESET" "${#emerg[@]}"
-    [[ -n "${crit[*]}" ]] && printf "%bcritical messages%b: %d\n" "$RED" "$RESET" "${#crit[@]}"
-    [[ -n "${alert[*]}" ]] && printf "%balert messages%b: %d\n" "$YELLOW" "$RESET" "${#alert[@]}"
-    [[ -n "${err[*]}" ]] && printf "%berror messages%b: %d\n" "$YELLOW" "$RESET" "${#err[@]}"
-    [[ -n "${warn[*]}" ]] && printf "%bwarning messages%b: %d\n" "$YELLOW" "$RESET" "${#warn[@]}"
+    [[ -n "${emerg[*]}" ]] && printf "%bemergency messages%b: %d\n" "$red" "$reset" "${#emerg[@]}"
+    [[ -n "${crit[*]}" ]] && printf "%bcritical messages%b: %d\n" "$red" "$reset" "${#crit[@]}"
+    [[ -n "${alert[*]}" ]] && printf "%balert messages%b: %d\n" "$yellow" "$reset" "${#alert[@]}"
+    [[ -n "${err[*]}" ]] && printf "%berror messages%b: %d\n" "$yellow" "$reset" "${#err[@]}"
+    [[ -n "${warn[*]}" ]] && printf "%bwarning messages%b: %d\n" "$yellow" "$reset" "${#warn[@]}"
 }
 
 check_mounts() {
-    local line mounts mount_errors nfs_servers mount nfs
+    local line mount
+    declare -a mounts mount_errors
 
     if [[ -f /etc/fstab ]]; then
         while read -ra line || [[ -n "${line[*]}" ]]; do
@@ -94,7 +99,7 @@ check_mounts() {
     if [[ -n "${mounts[*]}" ]]; then
         for mount in "${mounts[@]}"; do
             if ! findmnt "$mount" &> /dev/null; then
-                mount_errors+=("${YELLOW}${mount} is declared in fstab but not mounted${RESET}")
+                mount_errors+=("${yellow}${mount} is declared in fstab but not mounted${reset}")
             fi
         done
     fi
@@ -103,11 +108,11 @@ check_mounts() {
         check_df "-Ti"
         check_df "-Th"
     else
-        mount_errors+=("${YELLOW}Hung mount detected${RESET}")
+        mount_errors+=("${yellow}Hung mount detected${reset}")
     fi
 
     if [[ -n "${mount_errors[*]}" ]]; then
-        printf "%bMounts & File Systems:%b\n" "$BLUE" "$RESET"
+        printf "%bMounts & File Systems:%b\n" "$blue" "$reset"
         for error in "${mount_errors[@]}"; do
             printf "  %b\n" "$error"
         done
@@ -115,9 +120,9 @@ check_mounts() {
 }
 
 get_network_info() {
-    local line gateway interface dns_servers dns ntp_servers ntp nfs
-
-    declare -A interfaces
+    local line gateway interface dns ntp nfs
+    declare -a dns_servers ntp_servers
+    declare -A interfaces exports
 
     while read -ra line; do
         if [[ "${line[0]}" == default ]]; then
@@ -128,77 +133,71 @@ get_network_info() {
     done < <(ip route 2> /dev/null)
 
     if [[ -n "${interfaces[*]}" ]]; then
-        printf "%bInterface(s):%b\n" "$BLUE" "$RESET"
+        printf "%bInterface(s):%b\n" "$blue" "$reset"
         for interface in "${!interfaces[@]}"; do
             printf "  %s - %s\n" "$interface" "${interfaces[$interface]}"
         done
     fi
 
     if [[ -n "$gateway" ]]; then
-        printf "%bDefault gateway:%b\n" "$BLUE" "$RESET"
+        printf "%bDefault gateway:%b\n" "$blue" "$reset"
         if ping -W1 -c1 "$gateway" &> /dev/null; then
-            printf "  %s (%breachable%b)\n" "$gateway" "$GREEN" "$RESET"
+            printf "  %s (%breachable%b)\n" "$gateway" "$green" "$reset"
         else
-            printf "  %s (%bunreachable%b)\n" "$gateway" "$YELLOW" "$RESET"
+            printf "  %s (%bunreachable%b)\n" "$gateway" "$yellow" "$reset"
         fi
     fi
 
     readarray -t dns_servers < <(nmcli device show 2> /dev/null | awk '/DNS/ && !x[$2]++ {print $2}')
 
     if [[ -n "${dns_servers[*]}" ]]; then
-        printf "%bDNS nameserver(s):%b\n" "$BLUE" "$RESET"
+        printf "%bDNS nameserver(s):%b\n" "$blue" "$reset"
         for dns in "${dns_servers[@]}"; do
             if ping -W1 -c1 "$dns" &> /dev/null; then
-                printf "  %s (%breachable%b)\n" "$dns" "$GREEN" "$RESET"
+                printf "  %s (%breachable%b)\n" "$dns" "$green" "$reset"
             else
-                printf "  %s (%bpotential DNS error%b)\n" "$dns" "$YELLOW" "$RESET"
+                printf "  %s (%bpotential DNS error%b)\n" "$dns" "$yellow" "$reset"
             fi
         done
     fi
 
     while read -ra line; do
         case "${line[0]}" in
-            ^\*) ntp_servers+=("${line[1]} (${GREEN}current best${RESET})") ;;
-            ^\+) ntp_servers+=("${line[1]} (${GREEN}combined${RESET})") ;;
-            ^-) ntp_servers+=("${line[1]} (${GREEN}not combined${RESET})") ;;
-            ^x) ntp_servers+=("${line[1]} (${YELLOW}may be in error${RESET})") ;;
-            ^~) ntp_servers+=("${line[1]} (${RED}too variable${RESET})") ;;
-            ^\?) ntp_servers+=("${line[1]} (${RED}unusable${RESET})") ;;
-            *) ;;
+            ^\*) ntp_servers+=("${line[1]} (${green}current best${reset})") ;;
+            ^\+) ntp_servers+=("${line[1]} (${green}combined${reset})") ;;
+            ^-) ntp_servers+=("${line[1]} (${green}not combined${reset})") ;;
+            ^x) ntp_servers+=("${line[1]} (${yellow}may be in error${reset})") ;;
+            ^~) ntp_servers+=("${line[1]} (${red}too variable${reset})") ;;
+            ^\?) ntp_servers+=("${line[1]} (${red}unusable${reset})") ;;
+            *) continue ;;
         esac
     done < <(chronyc -n sources 2> /dev/null)
 
     if [[ -n "${ntp_servers[*]}" ]]; then
-        printf "%bNTP server(s):%b\n" "$BLUE" "$RESET"
+        printf "%bNTP server(s):%b\n" "$blue" "$reset"
         for ntp in "${ntp_servers[@]}"; do
             printf "  %b\n" "$ntp"
         done
     fi
 
-    declare -A nfs_servers
-
-    if [[ -f /etc/fstab ]]; then
-        while read -ra line || [[ -n "${line[*]}" ]]; do
-            if [[ ! "${line[0]}" =~ ^# && "${line[2]}" == nfs ]]; then
-                nfs_servers["${line[0]%:*}"]=1
-            fi
-        done < /etc/fstab
+    if type findmnt &> /dev/null; then
+        while read -r fstype src target; do
+            exports["${fstype} - ${src}"]="$target"
+        done < <(findmnt -rn -t nfs,nfs4,cifs,smb3,fuse.sshfs,glusterfs,ceph,9p,lustre,fuse.davfs \
+            -o FSTYPE,SOURCE,TARGET)
     fi
 
-    if [[ -n "${nfs_servers[*]}" ]]; then
-        printf "%bNFS Server(s):%b\n" "$BLUE" "$RESET"
-        for nfs in "${!nfs_servers[@]}"; do
-            if timeout 1 showmount "$nfs" &> /dev/null; then
-                printf "  %s (%breachable%b)\n" "$nfs" "$GREEN" "$RESET"
-            else
-                printf "  %s (%bpotential NFS error%b)\n" "$nfs" "$YELLOW" "$RESET"
-            fi
+    if [[ -n "${exports[*]}" ]]; then
+        printf "%bNetwork export(s):%b\n" "$blue" "$reset"
+        for nfs in "${!exports[@]}"; do
+            printf "  %s -> %s\n" "$nfs" "${exports["$nfs"]}"
         done
     fi
 }
 
 users_with_open_files() {
-    local all_users id line
+    local id line
+    declare -a all_users
 
     readarray -t all_users < <(lsof -Fnu | awk '/^u/&&!x[$0]++')
 
@@ -216,25 +215,25 @@ file_vulnerability() {
     world_write="$(find "$dir" ! -type l -perm -002)"
     setbits="$(find "$dir" -perm -4000 -o -perm -2000)"
 
-    [[ -n "$world_write" ]] && printf "%bWorld writable files:%b\n%s\n" "$BLUE" "$RESET" "$world_write"
-    [[ -n "$setbits" ]] && printf "%bFiles with setgids/setuids:%b\n%s\n" "$BLUE" "$RESET" "$setbits"
+    [[ -n "$world_write" ]] && printf "%bWorld writable files:%b\n%s\n" "$blue" "$reset" "$world_write"
+    [[ -n "$setbits" ]] && printf "%bFiles with setgids/setuids:%b\n%s\n" "$blue" "$reset" "$setbits"
 }
 
 whotf() {
-    local users
+    declare -a users
 
     readarray -t users < <(who)
 
     if [[ -n "${users[*]}" ]]; then
-        printf "%bUsers Currently Logged in:%b\n" "$BLUE" "$RESET"
+        printf "%bUsers Currently Logged in:%b\n" "$blue" "$reset"
         printf "%s\n" "${users[@]}"
     fi
 }
 
 get_mem_info() {
-    local mem_total mem_available swap_total swap_free mem_percent swap_percent line
+    local line mem_total mem_available swap_total swap_free mem_percent swap_percent
 
-    printf "%bMemory Usage:%b\n" "$BLUE" "$RESET"
+    printf "%bMemory Usage:%b\n" "$blue" "$reset"
     if [[ -f /proc/meminfo ]]; then
         while read -ra line || [[ -n "${line[*]}" ]]; do
             case "${line[0]}" in
@@ -242,6 +241,7 @@ get_mem_info() {
                 MemAvailable:) mem_available="${line[1]}" ;;
                 SwapTotal:) swap_total="${line[1]}" ;;
                 SwapFree:) swap_free="${line[1]}" ;;
+                *) continue ;;
             esac
         done < /proc/meminfo
 
@@ -256,7 +256,7 @@ get_mem_info() {
                 Mem:)
                     if (( mem_percent >= 90 )); then
                         printf "%s %15s %10s %11s %11s %11s %11s %b%11s%b\n" \
-                            "${line[@]}" "$RED" "${mem_percent:-0}%" "$RESET"
+                            "${line[@]}" "$red" "${mem_percent:-0}%" "$reset"
                     else
                         printf "%s %15s %10s %11s %11s %11s %11s %11s\n" "${line[@]}" "${mem_percent:-0}%"
                     fi
@@ -264,11 +264,13 @@ get_mem_info() {
 
                 Swap:)
                     if (( swap_percent >= 90 )); then
-                        printf "%s %14s %10s %11s %b%47s%b\n" "${line[@]}" "$RED" "${swap_percent:-0}%" "$RESET"
+                        printf "%s %14s %10s %11s %b%47s%b\n" "${line[@]}" "$red" "${swap_percent:-0}%" "$reset"
                     else
                         printf "%s %14s %10s %11s %47s\n" "${line[@]}" "${swap_percent:-0}%"
                     fi
                 ;;
+
+                *) continue ;;
             esac
         done < <(free -h)
     else
@@ -277,39 +279,43 @@ get_mem_info() {
 }
 
 get_public_ip() {
-    local public_ip_info
+    declare -a public_ip_info
 
     readarray -t public_ip_info < <(curl --connect-timeout 5 -s ipinfo.io | jq -r '.ip, .hostname, .org')
 
-    [[ -n "${public_ip_info[0]}" ]] && printf "%bPublic IP:%b %s\n" "$BLUE" "$RESET" "${public_ip_info[0]}"
-    [[ -n "${public_ip_info[1]}" ]] && printf "%bHostname:%b %s\n" "$BLUE" "$RESET" "${public_ip_info[1]}"
-    [[ -n "${public_ip_info[2]}" ]] && printf "%bISP:%b %s\n" "$BLUE" "$RESET" "${public_ip_info[2]}"
+    [[ -n "${public_ip_info[0]}" ]] && printf "%bPublic IP:%b %s\n" "$blue" "$reset" "${public_ip_info[0]}"
+    [[ -n "${public_ip_info[1]}" ]] && printf "%bHostname:%b %s\n" "$blue" "$reset" "${public_ip_info[1]}"
+    [[ -n "${public_ip_info[2]}" ]] && printf "%bISP:%b %s\n" "$blue" "$reset" "${public_ip_info[2]}"
 }
 
 get_args() {
     local option
+    declare -ag args_array
 
     while getopts ':efhiopr:svw:z' option; do
         case "$option" in
             e|f|i|o|p|s|z) args_array+=("$option") ;;
             h) usage; exit 0 ;;
-            r) ssh -qt "$OPTARG" "bash -s" < "$0" ;;
+            r) ssh -qt "$OPTARG" "bash -s" < "$0"; exit 0 ;;
             v) printf "%s\n" "$VERSION"; exit 0 ;;
-            w) args_array+=("$option"); user="$OPTARG" ;;
+            w) args_array+=("$option"); declare -g user="$OPTARG" ;;
             ?)
                 printf "health: invalid option -- '%s'\n" "$OPTARG" >&2
                 printf "Try 'health -h' for more information.\n" >&2; exit 2
             ;;
         esac
     done
+
     shift "$(( OPTIND -1 ))"
 
-    if [[ -z "${1:-}" ]]; then
-       dir="$(pwd)"
+    if ! [[ "${args_array[*]}" =~ [fis] ]]; then
+        return 0
+    elif [[ -z "${1:-}" ]]; then
+       declare -g dir="$PWD"
     elif [[ ! -d "$1" ]]; then
         printf "'%s': not a valid path.\n" "$1" >&2; exit 2
     elif [[ -n "${args_array[*]}" ]]; then
-        dir="$1"
+        declare -g dir="$1"
     else
         printf "health: invalid option -- '%s'\n" "$*" >&2
         printf "Try 'health -h' for more information.\n" >&2; exit 2
@@ -317,11 +323,13 @@ get_args() {
 }
 
 main() {
-    RESET='\033[0m'
-    RED='\033[0;31m'
-    GREEN='\033[0;32m'
-    YELLOW='\033[0;33m'
-    BLUE='\033[0;34m'
+    declare -g reset red green yellow blue
+
+    reset='\033[0m'
+    red='\033[0;31m'
+    green='\033[0;32m'
+    yellow='\033[0;33m'
+    blue='\033[0;34m'
 
     if [[ "$#" -eq 0 ]]; then
         health; exit 0
