@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly VERSION="Health version: 1.12.0 - August 21, 2025"
+readonly VERSION="Health version: 1.12.1 - August 22, 2025"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -308,9 +308,7 @@ get_args() {
 
     shift "$(( OPTIND -1 ))"
 
-    if ! [[ "${args_array[*]}" =~ [fis] ]]; then
-        return 0
-    elif [[ -z "${1:-}" ]]; then
+    if [[ -z "${1:-}" ]]; then
        declare -g dir="$PWD"
     elif [[ ! -d "$1" ]]; then
         printf "'%s': not a valid path.\n" "$1" >&2; exit 2
