@@ -3,7 +3,7 @@
 # Health: A command-line RHEL system check tool written in bash 4.0+.
 # https://github.com/zpiatt/health
 #
-# Copyright (C) 2025 Zac Piatt
+# Copyright (C) 2026 Zac Piatt
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,44 +18,9 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly VERSION="Health version: 1.12.3 - May 27, 2026"
 
-usage() {
-    printf "Usage: health [OPTION]... [DIRECTORY]...\n"
-    printf "Display general system statistics and check for common errors.\n\n"
-    printf "  -e,   parse dmesg for alerts, errors, etc. (may require sudo)\n"
-    printf "  -f,   report 10 largest files in specified directory tree\n"
-    printf "  -h,   display this help and exit\n"
-    printf "  -i,   report 10 largest directories by inode usage\n"
-    printf "  -o,   show users with open files (may require sudo)\n"
-    printf "  -p,   display public IP information, if available\n"
-    printf "  -r,   display health on remote host\n"
-    printf "  -s,   search for common file permission vulnerabilities\n"
-    printf "  -v,   display version number and exit\n"
-    printf "  -w,   show passwd entry for specified user\n"
-    printf "  -z,   display zombie process count, if any\n\n"
-    printf "Full documentation <https://github.com/zpiatt/health>\n"
-}
+readonly VERSION="Health version: 1.13.0 - May 27, 2026"
 
-health() {
-    local product_name sys_vendor
-
-    product_name="/sys/devices/virtual/dmi/id/product_name"
-    sys_vendor="/sys/devices/virtual/dmi/id/sys_vendor"
-
-    printf "%bHostname:%b %s\n" "$blue" "$reset" "$HOSTNAME"
-    [[ -f /etc/redhat-release ]] && printf "%bVersion:%b %s\n" "$blue" "$reset" "$(</etc/redhat-release)"
-    [[ -f /proc/version ]] && printf "%bKernel:%b %s\n" "$blue" "$reset" "$(awk '{print $3}' /proc/version)"
-    [[ -f "$product_name" && -f "$sys_vendor" ]] && {
-        printf "%bHost Info:%b %s, %s\n" "$blue" "$reset" "$(<"$sys_vendor")" "$(<"$product_name")"; }
-    printf "%bUptime:%b %s\n" "$blue" "$reset" "$(uptime)"
-    get_network_info
-    whotf
-    get_mem_info
-    printf "%bTop 5 Processes by Memory:%b\t%bTop 5 Processes by CPU:%b\n" "$blue" "$reset" "$blue" "$reset"
-    paste <(ps -eo %mem,comm,pid --sort=-%mem | head -n 6) <(ps -eo %cpu,comm,pid --sort=-pcpu | head -n 6)
-    check_mounts
-}
 
 check_df() {
     local line
@@ -66,25 +31,9 @@ check_df() {
         elif [[ "$line" =~ 9[0-9]% ]]; then
             mount_errors+=("${yellow}${line}${reset}")
         fi
-    done < <(df "$1")
+    done < <(df -P "$1")
 }
 
-dmesg_parse() {
-    local level
-    declare -a emerg crit alert err warn
-
-    if dmesg -V > /dev/null; then
-        for level in emerg crit alert err warn; do
-            readarray -t "$level" < <(dmesg -l "$level")
-        done
-    fi
-
-    [[ -n "${emerg[*]}" ]] && printf "%bemergency messages%b: %d\n" "$red" "$reset" "${#emerg[@]}"
-    [[ -n "${crit[*]}" ]] && printf "%bcritical messages%b: %d\n" "$red" "$reset" "${#crit[@]}"
-    [[ -n "${alert[*]}" ]] && printf "%balert messages%b: %d\n" "$yellow" "$reset" "${#alert[@]}"
-    [[ -n "${err[*]}" ]] && printf "%berror messages%b: %d\n" "$yellow" "$reset" "${#err[@]}"
-    [[ -n "${warn[*]}" ]] && printf "%bwarning messages%b: %d\n" "$yellow" "$reset" "${#warn[@]}"
-}
 
 check_mounts() {
     local line mount
@@ -119,93 +68,27 @@ check_mounts() {
     fi
 }
 
-get_network_info() {
-    local line gateway interface dns ntp nfs
-    declare -a dns_servers ntp_servers
-    declare -A interfaces exports
 
-    while read -ra line; do
-        if [[ "${line[0]}" == default ]]; then
-            gateway="${line[2]}"
-        elif [[ "${line[6]}" == link ]]; then
-            interfaces["${line[2]}"]="${line[8]}"
-        fi
-    done < <(ip route 2> /dev/null)
+dmesg_parse() {
+    if has_cmd dmesg && dmesg -V > /dev/null; then
+        local level
+        declare -a emerg crit alert err warn
 
-    if [[ -n "${interfaces[*]}" ]]; then
-        printf "%bInterface(s):%b\n" "$blue" "$reset"
-        for interface in "${!interfaces[@]}"; do
-            printf "  %s - %s\n" "$interface" "${interfaces[$interface]}"
+        for level in emerg crit alert err warn; do
+            readarray -t "$level" < <(dmesg -l "$level")
         done
-    fi
 
-    if [[ -n "$gateway" ]]; then
-        printf "%bDefault gateway:%b\n" "$blue" "$reset"
-        if ping -W1 -c1 "$gateway" &> /dev/null; then
-            printf "  %s (%breachable%b)\n" "$gateway" "$green" "$reset"
-        else
-            printf "  %s (%bunreachable%b)\n" "$gateway" "$yellow" "$reset"
-        fi
-    fi
-
-    readarray -t dns_servers < <(nmcli device show 2> /dev/null | awk '/DNS/ && !x[$2]++ {print $2}')
-
-    if [[ -n "${dns_servers[*]}" ]]; then
-        printf "%bDNS nameserver(s):%b\n" "$blue" "$reset"
-        for dns in "${dns_servers[@]}"; do
-            if timeout 1 bash -c ":> /dev/tcp/${dns}/53" &> /dev/null; then
-                printf "  %s (%breachable%b)\n" "$dns" "$green" "$reset"
-            else
-                printf "  %s (%bpotential DNS error%b)\n" "$dns" "$yellow" "$reset"
-            fi
-        done
-    fi
-
-    while read -ra line; do
-        case "${line[0]}" in
-            ^\*) ntp_servers+=("${line[1]} (${green}current best${reset})") ;;
-            ^\+) ntp_servers+=("${line[1]} (${green}combined${reset})") ;;
-            ^-) ntp_servers+=("${line[1]} (${green}not combined${reset})") ;;
-            ^x) ntp_servers+=("${line[1]} (${yellow}may be in error${reset})") ;;
-            ^~) ntp_servers+=("${line[1]} (${red}too variable${reset})") ;;
-            ^\?) ntp_servers+=("${line[1]} (${red}unusable${reset})") ;;
-            *) continue ;;
-        esac
-    done < <(chronyc -n sources 2> /dev/null)
-
-    if [[ -n "${ntp_servers[*]}" ]]; then
-        printf "%bNTP server(s):%b\n" "$blue" "$reset"
-        for ntp in "${ntp_servers[@]}"; do
-            printf "  %b\n" "$ntp"
-        done
-    fi
-
-    if type findmnt &> /dev/null; then
-        while read -r fstype src target; do
-            exports["${fstype} - ${src}"]="$target"
-        done < <(findmnt -rn -t nfs,nfs4,cifs,smb3,fuse.sshfs,glusterfs,ceph,9p,lustre,fuse.davfs \
-            -o FSTYPE,SOURCE,TARGET)
-    fi
-
-    if [[ -n "${exports[*]}" ]]; then
-        printf "%bNetwork export(s):%b\n" "$blue" "$reset"
-        for nfs in "${!exports[@]}"; do
-            printf "  %s -> %s\n" "$nfs" "${exports["$nfs"]}"
-        done
+        [[ -n "${emerg[*]}" ]] && printf "%bemergency messages%b: %d\n" \
+            "$red" "$reset" "${#emerg[@]}"
+        [[ -n "${crit[*]}" ]] && printf "%bcritical messages%b: %d\n" "$red" "$reset" "${#crit[@]}"
+        [[ -n "${alert[*]}" ]] && printf "%balert messages%b: %d\n" \
+            "$yellow" "$reset" "${#alert[@]}"
+        [[ -n "${err[*]}" ]] && printf "%berror messages%b: %d\n" "$yellow" "$reset" "${#err[@]}"
+        [[ -n "${warn[*]}" ]] && printf "%bwarning messages%b: %d\n" \
+            "$yellow" "$reset" "${#warn[@]}"
     fi
 }
 
-users_with_open_files() {
-    local line
-    declare -a uids
-
-    readarray -t uids < <(lsof -Fnu | awk '/^u/ { sub(/^u/, ""); if (!x[$0]++) print }')
-
-    printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" "NAME" "UID" "GID" "FULL NAME"
-    while IFS=':' read -ra line; do
-        printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" "${line[0]}" "${line[2]}" "${line[3]}" "${line[4]}"
-    done < <(getent passwd "${uids[@]}")
-}
 
 file_vulnerability() {
     local world_write setbits
@@ -213,78 +96,12 @@ file_vulnerability() {
     world_write="$(find "$dir" ! -type l -perm -002)"
     setbits="$(find "$dir" -perm -4000 -o -perm -2000)"
 
-    [[ -n "$world_write" ]] && printf "%bWorld writable files:%b\n%s\n" "$blue" "$reset" "$world_write"
-    [[ -n "$setbits" ]] && printf "%bFiles with setgids/setuids:%b\n%s\n" "$blue" "$reset" "$setbits"
+    [[ -n "$world_write" ]] && printf "%bWorld writable files:%b\n%s\n" \
+        "$blue" "$reset" "$world_write"
+    [[ -n "$setbits" ]] && printf "%bFiles with setgids/setuids:%b\n%s\n" \
+        "$blue" "$reset" "$setbits"
 }
 
-whotf() {
-    declare -a users
-
-    readarray -t users < <(who)
-
-    if [[ -n "${users[*]}" ]]; then
-        printf "%bUsers Currently Logged in:%b\n" "$blue" "$reset"
-        printf "%s\n" "${users[@]}"
-    fi
-}
-
-get_mem_info() {
-    local line mem_total mem_available swap_total swap_free mem_percent swap_percent
-
-    printf "%bMemory Usage:%b\n" "$blue" "$reset"
-    if [[ -f /proc/meminfo ]]; then
-        while read -ra line || [[ -n "${line[*]}" ]]; do
-            case "${line[0]}" in
-                MemTotal:) mem_total="${line[1]}" ;;
-                MemAvailable:) mem_available="${line[1]}" ;;
-                SwapTotal:) swap_total="${line[1]}" ;;
-                SwapFree:) swap_free="${line[1]}" ;;
-                *) continue ;;
-            esac
-        done < /proc/meminfo
-
-        (( mem_total > 0 )) && mem_percent=$(( ((mem_total - mem_available) * 100) / mem_total ))
-        (( swap_total > 0 )) && swap_percent=$(( ((swap_total - swap_free) * 100) / swap_total ))
-
-        printf "%20s %10s %11s %11s %11s %11s %11s\n" \
-            "total" "used" "free" "shared" "buff/cache" "available" "used%"
-
-        while read -ra line; do
-            case "${line[0]}" in
-                Mem:)
-                    if (( mem_percent >= 90 )); then
-                        printf "%s %15s %10s %11s %11s %11s %11s %b%11s%b\n" \
-                            "${line[@]}" "$red" "${mem_percent:-0}%" "$reset"
-                    else
-                        printf "%s %15s %10s %11s %11s %11s %11s %11s\n" "${line[@]}" "${mem_percent:-0}%"
-                    fi
-                ;;
-
-                Swap:)
-                    if (( swap_percent >= 90 )); then
-                        printf "%s %14s %10s %11s %b%47s%b\n" "${line[@]}" "$red" "${swap_percent:-0}%" "$reset"
-                    else
-                        printf "%s %14s %10s %11s %47s\n" "${line[@]}" "${swap_percent:-0}%"
-                    fi
-                ;;
-
-                *) continue ;;
-            esac
-        done < <(free -h)
-    else
-        free -h
-    fi
-}
-
-get_public_ip() {
-    declare -a public_ip_info
-
-    readarray -t public_ip_info < <(curl --connect-timeout 5 -s ipinfo.io | jq -r '.ip, .hostname, .org')
-
-    [[ -n "${public_ip_info[0]}" ]] && printf "%bPublic IP:%b %s\n" "$blue" "$reset" "${public_ip_info[0]}"
-    [[ -n "${public_ip_info[1]}" ]] && printf "%bHostname:%b %s\n" "$blue" "$reset" "${public_ip_info[1]}"
-    [[ -n "${public_ip_info[2]}" ]] && printf "%bISP:%b %s\n" "$blue" "$reset" "${public_ip_info[2]}"
-}
 
 get_args() {
     local option
@@ -317,6 +134,240 @@ get_args() {
         printf "Try 'health -h' for more information.\n" >&2; exit 2
     fi
 }
+
+
+get_network_info() {
+    local line gateway interface dns ntp nfs
+    declare -a dns_servers ntp_servers
+    declare -A interfaces exports
+
+    while read -ra line; do
+        if [[ "${line[0]}" == default ]]; then
+            gateway="${line[2]}"
+        elif [[ "${line[6]}" == link ]]; then
+            interfaces["${line[2]}"]="${line[8]}"
+        fi
+    done < <(ip route 2> /dev/null)
+
+    if [[ -n "${interfaces[*]}" ]]; then
+        printf "%bInterface(s):%b\n" "$blue" "$reset"
+        for interface in "${!interfaces[@]}"; do
+            printf "  %s - %s\n" "$interface" "${interfaces[$interface]}"
+        done
+    fi
+
+    if [[ -n "$gateway" ]]; then
+        printf "%bDefault gateway:%b\n" "$blue" "$reset"
+        if ping -W1 -c1 "$gateway" &> /dev/null; then
+            printf "  %s (%breachable%b)\n" "$gateway" "$green" "$reset"
+        else
+            printf "  %s (%bunreachable%b)\n" "$gateway" "$yellow" "$reset"
+        fi
+    fi
+
+    if has_cmd nmcli; then
+        readarray -t dns_servers < \
+            <(nmcli device show 2> /dev/null | awk '/DNS/ && !x[$2]++ {print $2}')
+
+        if [[ -n "${dns_servers[*]}" ]]; then
+            printf "%bDNS nameserver(s):%b\n" "$blue" "$reset"
+            for dns in "${dns_servers[@]}"; do
+                if timeout 1 bash -c ":> /dev/tcp/${dns}/53" &> /dev/null; then
+                    printf "  %s (%breachable%b)\n" "$dns" "$green" "$reset"
+                else
+                    printf "  %s (%bpotential DNS error%b)\n" "$dns" "$yellow" "$reset"
+                fi
+            done
+        fi
+    fi
+
+    if has_cmd chronyc; then
+        while read -ra line; do
+            case "${line[0]}" in
+                ^\*) ntp_servers+=("${line[1]} (${green}current best${reset})") ;;
+                ^\+) ntp_servers+=("${line[1]} (${green}combined${reset})") ;;
+                ^-) ntp_servers+=("${line[1]} (${green}not combined${reset})") ;;
+                ^x) ntp_servers+=("${line[1]} (${yellow}may be in error${reset})") ;;
+                ^~) ntp_servers+=("${line[1]} (${red}too variable${reset})") ;;
+                ^\?) ntp_servers+=("${line[1]} (${red}unusable${reset})") ;;
+                *) continue ;;
+            esac
+        done < <(chronyc -n sources 2> /dev/null)
+    fi
+
+    if [[ -n "${ntp_servers[*]}" ]]; then
+        printf "%bNTP server(s):%b\n" "$blue" "$reset"
+        for ntp in "${ntp_servers[@]}"; do
+            printf "  %b\n" "$ntp"
+        done
+    fi
+
+    if has_cmd findmnt &> /dev/null; then
+        while read -r fstype src target; do
+            exports["${fstype} - ${src}"]="$target"
+        done < <(findmnt -rn -t nfs,nfs4,cifs,smb3,fuse.sshfs,glusterfs,ceph,9p,lustre,fuse.davfs \
+            -o FSTYPE,SOURCE,TARGET)
+    fi
+
+    if [[ -n "${exports[*]}" ]]; then
+        printf "%bNetwork export(s):%b\n" "$blue" "$reset"
+        for nfs in "${!exports[@]}"; do
+            printf "  %s -> %s\n" "$nfs" "${exports["$nfs"]}"
+        done
+    fi
+}
+
+
+get_mem_info() {
+    local line mem_total mem_available swap_total swap_free mem_percent swap_percent
+
+    printf "%bMemory Usage:%b\n" "$blue" "$reset"
+    if [[ -f /proc/meminfo ]]; then
+        while read -ra line || [[ -n "${line[*]}" ]]; do
+            case "${line[0]}" in
+                MemTotal:) mem_total="${line[1]}" ;;
+                MemAvailable:) mem_available="${line[1]}" ;;
+                SwapTotal:) swap_total="${line[1]}" ;;
+                SwapFree:) swap_free="${line[1]}" ;;
+                *) continue ;;
+            esac
+        done < /proc/meminfo
+
+        (( mem_total > 0 )) && mem_percent=$(( ((mem_total - mem_available) * 100) / mem_total ))
+        (( swap_total > 0 )) && swap_percent=$(( ((swap_total - swap_free) * 100) / swap_total ))
+
+        printf "%20s %10s %11s %11s %11s %11s %11s\n" \
+            "total" "used" "free" "shared" "buff/cache" "available" "used%"
+
+        while read -ra line; do
+            case "${line[0]}" in
+                Mem:)
+                    if (( mem_percent >= 90 )); then
+                        printf "%s %15s %10s %11s %11s %11s %11s %b%11s%b\n" \
+                            "${line[@]}" "$red" "${mem_percent:-0}%" "$reset"
+                    else
+                        printf "%s %15s %10s %11s %11s %11s %11s %11s\n" \
+                            "${line[@]}" "${mem_percent:-0}%"
+                    fi
+                ;;
+
+                Swap:)
+                    if (( swap_percent >= 90 )); then
+                        printf "%s %14s %10s %11s %b%47s%b\n" \
+                            "${line[@]}" "$red" "${swap_percent:-0}%" "$reset"
+                    else
+                        printf "%s %14s %10s %11s %47s\n" "${line[@]}" "${swap_percent:-0}%"
+                    fi
+                ;;
+
+                *) continue ;;
+            esac
+        done < <(free -h)
+    else
+        free -h
+    fi
+}
+
+
+get_public_ip() {
+    if has_cmd curl && has_cmd jq; then
+        declare -a public_ip_info
+
+        readarray -t public_ip_info < \
+            <(curl --connect-timeout 5 -s ipinfo.io | jq -r '.ip, .hostname, .org' 2> /dev/null)
+
+        [[ -n "${public_ip_info[0]}" ]] && printf "%bPublic IP:%b %s\n" \
+            "$blue" "$reset" "${public_ip_info[0]}"
+        [[ -n "${public_ip_info[1]}" ]] && printf "%bHostname:%b %s\n" \
+            "$blue" "$reset" "${public_ip_info[1]}"
+        [[ -n "${public_ip_info[2]}" ]] && printf "%bISP:%b %s\n" \
+            "$blue" "$reset" "${public_ip_info[2]}"
+    fi
+}
+
+
+has_cmd () {
+    command -v "$1" &> /dev/null
+}
+
+
+health() {
+    local product_name sys_vendor
+
+    product_name="/sys/devices/virtual/dmi/id/product_name"
+    sys_vendor="/sys/devices/virtual/dmi/id/sys_vendor"
+
+    printf "%bHostname:%b %s\n" "$blue" "$reset" "$HOSTNAME"
+
+    [[ -f /etc/os-release ]] && printf "%bVersion:%b %s\n" \
+        "$blue" "$reset" "$(grep -Po "(?<=PRETTY_NAME=\").*[^\"]" /etc/os-release)"
+
+    [[ -f /proc/version ]] && printf "%bKernel:%b %s\n" \
+        "$blue" "$reset" "$(awk '{print $3}' /proc/version)"
+
+    [[ -f "$product_name" && -f "$sys_vendor" ]] && {
+        printf "%bHost Info:%b %s, %s\n" \
+            "$blue" "$reset" "$(<"$sys_vendor")" "$(<"$product_name")"; }
+
+    printf "%bUptime:%b %s\n" "$blue" "$reset" "$(uptime)"
+
+    get_network_info
+    whotf
+    get_mem_info
+
+    printf "%bTop 5 Processes by Memory:%b\t%bTop 5 Processes by CPU:%b\n" "$blue" "$reset" \
+        "$blue" "$reset"
+
+    paste <(ps -eo %mem,comm,pid --sort=-%mem | head -n 6) \
+        <(ps -eo %cpu,comm,pid --sort=-pcpu | head -n 6)
+
+    check_mounts
+}
+
+
+usage() {
+    printf "Usage: health [OPTION]... [DIRECTORY]...\n"
+    printf "Display general system statistics and check for common errors.\n\n"
+    printf "  -e,   parse dmesg for alerts, errors, etc. (may require sudo)\n"
+    printf "  -f,   report 10 largest files in specified directory tree\n"
+    printf "  -h,   display this help and exit\n"
+    printf "  -i,   report 10 largest directories by inode usage\n"
+    printf "  -o,   show users with open files (may require sudo)\n"
+    printf "  -p,   display public IP information, if available\n"
+    printf "  -r,   display health on remote host\n"
+    printf "  -s,   search for common file permission vulnerabilities\n"
+    printf "  -v,   display version number and exit\n"
+    printf "  -w,   show passwd entry for specified user\n"
+    printf "  -z,   display zombie process count, if any\n\n"
+    printf "Full documentation <https://github.com/zpiatt/health>\n"
+}
+
+
+users_with_open_files() {
+    local line
+    declare -a uids
+
+    readarray -t uids < <(lsof -Fnu | awk '/^u/ { sub(/^u/, ""); if (!x[$0]++) print }')
+
+    printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" "NAME" "UID" "GID" "FULL NAME"
+    while IFS=':' read -ra line; do
+        printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" \
+            "${line[0]}" "${line[2]}" "${line[3]}" "${line[4]}"
+    done < <(getent passwd "${uids[@]}")
+}
+
+
+whotf() {
+    declare -a users
+
+    readarray -t users < <(who)
+
+    if [[ -n "${users[*]}" ]]; then
+        printf "%bUsers Currently Logged in:%b\n" "$blue" "$reset"
+        printf "%s\n" "${users[@]}"
+    fi
+}
+
 
 main() {
     declare -g reset red green yellow blue
