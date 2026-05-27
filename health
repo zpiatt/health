@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Health: A command-line RHEL system check tool written in bash 3.2+.
+# Health: A command-line RHEL system check tool written in bash 4.0+.
 # https://github.com/zpiatt/health
 #
 # Copyright (C) 2025 Zac Piatt
@@ -18,7 +18,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-readonly VERSION="Health version: 1.12.2 - October 26, 2025"
+readonly VERSION="Health version: 1.12.3 - May 27, 2026"
 
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
@@ -61,11 +61,11 @@ check_df() {
     local line
 
     while read -r line; do
-        case "$line" in
-            *100%*) mount_errors+=("${red}${line}${reset}") ;;
-            *9?%*) mount_errors+=("${yellow}${line}${reset}") ;;
-            *) continue ;;
-        esac
+        if [[ "$line" =~ 100% ]]; then
+            mount_errors+=("${red}${line}${reset}")
+        elif [[ "$line" =~ 9[0-9]% ]]; then
+            mount_errors+=("${yellow}${line}${reset}")
+        fi
     done < <(df "$1")
 }
 
@@ -196,17 +196,15 @@ get_network_info() {
 }
 
 users_with_open_files() {
-    local id line
-    declare -a all_users
+    local line
+    declare -a uids
 
-    readarray -t all_users < <(lsof -Fnu | awk '/^u/&&!x[$0]++')
+    readarray -t uids < <(lsof -Fnu | awk '/^u/ { sub(/^u/, ""); if (!x[$0]++) print }')
 
     printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" "NAME" "UID" "GID" "FULL NAME"
-    for id in "${all_users[@]}"; do
-        while IFS=':' read -ra line; do
-            printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" "${line[0]}" "${line[2]}" "${line[3]}" "${line[4]}"
-        done < <(getent passwd "${id:1}")
-    done
+    while IFS=':' read -ra line; do
+        printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" "${line[0]}" "${line[2]}" "${line[3]}" "${line[4]}"
+    done < <(getent passwd "${uids[@]}")
 }
 
 file_vulnerability() {
