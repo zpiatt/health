@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Health: A command-line RHEL system check tool written in bash 4.0+.
+# Health: A command-line RHEL system check tool written in bash 4.2+.
 # https://github.com/zpiatt/health
 #
 # Copyright (C) 2026 Zac Piatt
@@ -19,7 +19,13 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-readonly VERSION="Health version: 1.13.0 - May 27, 2026"
+readonly version="Health version: 1.13.1 - May 28, 2026"
+
+readonly reset='\033[0m'
+readonly red='\033[0;31m'
+readonly green='\033[0;32m'
+readonly yellow='\033[0;33m'
+readonly blue='\033[0;34m'
 
 
 check_df() {
@@ -71,35 +77,31 @@ check_mounts() {
 
 dmesg_parse() {
     if has_cmd dmesg && dmesg -V > /dev/null; then
-        local level
-        declare -a emerg crit alert err warn
+        local level logs
 
         for level in emerg crit alert err warn; do
-            readarray -t "$level" < <(dmesg -l "$level")
-        done
+            readarray -t logs < <(dmesg -l "$level")
 
-        [[ -n "${emerg[*]}" ]] && printf "%bemergency messages%b: %d\n" \
-            "$red" "$reset" "${#emerg[@]}"
-        [[ -n "${crit[*]}" ]] && printf "%bcritical messages%b: %d\n" "$red" "$reset" "${#crit[@]}"
-        [[ -n "${alert[*]}" ]] && printf "%balert messages%b: %d\n" \
-            "$yellow" "$reset" "${#alert[@]}"
-        [[ -n "${err[*]}" ]] && printf "%berror messages%b: %d\n" "$yellow" "$reset" "${#err[@]}"
-        [[ -n "${warn[*]}" ]] && printf "%bwarning messages%b: %d\n" \
-            "$yellow" "$reset" "${#warn[@]}"
+            if [[ -n "${logs[*]}" ]]; then
+                if [[ "$level" =~ (emerg|crit) ]]; then
+                    printf "%b%s messages%b: %d\n" "$red" "$level" "$reset" "${#logs[@]}"
+                else
+                    printf "%b%s messages%b: %d\n" "$yellow" "$level" "$reset" "${#logs[@]}"
+                fi
+            fi
+        done
     fi
 }
 
 
 file_vulnerability() {
-    local world_write setbits
-
-    world_write="$(find "$dir" ! -type l -perm -002)"
-    setbits="$(find "$dir" -perm -4000 -o -perm -2000)"
-
-    [[ -n "$world_write" ]] && printf "%bWorld writable files:%b\n%s\n" \
-        "$blue" "$reset" "$world_write"
-    [[ -n "$setbits" ]] && printf "%bFiles with setgids/setuids:%b\n%s\n" \
-        "$blue" "$reset" "$setbits"
+    while read -r path perm; do
+        if [[ "$perm" =~ [2367]$ ]]; then
+            printf "%bWorld write-able:%b %s\n" "$blue" "$reset" "$path"
+        else
+            printf "%bSUID/SGID:%b %s\n" "$blue" "$reset" "$path"
+        fi
+    done < <(find "$dir" ! -type l \( -perm -002 -o -perm -4000 -o -perm -2000 \) -printf "%p %m\n")
 }
 
 
@@ -107,12 +109,13 @@ get_args() {
     local option
     declare -ag args_array
 
-    while getopts ':efhiopr:svw:z' option; do
+    while getopts ':defhiopr:svw:z' option; do
         case "$option" in
+            d) set -x ;;
             e|f|i|o|p|s|z) args_array+=("$option") ;;
             h) usage; exit 0 ;;
             r) ssh -qt "$OPTARG" "bash -s" < "$0"; exit 0 ;;
-            v) printf "%s\n" "$VERSION"; exit 0 ;;
+            v) printf "%s\n" "$version"; exit 0 ;;
             w) args_array+=("$option"); declare -g user="$OPTARG" ;;
             ?)
                 printf "health: invalid option -- '%s'\n" "$OPTARG" >&2
@@ -123,12 +126,16 @@ get_args() {
 
     shift "$(( OPTIND -1 ))"
 
-    if [[ -z "${1:-}" ]]; then
-       declare -g dir="$PWD"
-    elif [[ ! -d "$1" ]]; then
-        printf "'%s': not a valid path.\n" "$1" >&2; exit 2
-    elif [[ -n "${args_array[*]}" ]]; then
-        declare -g dir="$1"
+    if [[ -n "${args_array[*]}" ]]; then
+        if [[ -z "$1" ]]; then
+            declare -g dir="$PWD"
+        elif [[ -d "$1" ]]; then
+            declare -g dir="$1"
+        else
+            printf "'%s': not a valid path.\n" "$1" >&2; exit 2
+        fi
+    elif [[ -z "$1" ]]; then
+        health; exit 0
     else
         printf "health: invalid option -- '%s'\n" "$*" >&2
         printf "Try 'health -h' for more information.\n" >&2; exit 2
@@ -202,7 +209,7 @@ get_network_info() {
         done
     fi
 
-    if has_cmd findmnt &> /dev/null; then
+    if has_cmd findmnt; then
         while read -r fstype src target; do
             exports["${fstype} - ${src}"]="$target"
         done < <(findmnt -rn -t nfs,nfs4,cifs,smb3,fuse.sshfs,glusterfs,ceph,9p,lustre,fuse.davfs \
@@ -219,10 +226,13 @@ get_network_info() {
 
 
 get_mem_info() {
-    local line mem_total mem_available swap_total swap_free mem_percent swap_percent
-
     printf "%bMemory Usage:%b\n" "$blue" "$reset"
+
     if [[ -f /proc/meminfo ]]; then
+       local line \
+        mem_total mem_available mem_percent mem_color \
+        swap_total swap_free swap_percent swap_color
+
         while read -ra line || [[ -n "${line[*]}" ]]; do
             case "${line[0]}" in
                 MemTotal:) mem_total="${line[1]}" ;;
@@ -235,6 +245,8 @@ get_mem_info() {
 
         (( mem_total > 0 )) && mem_percent=$(( ((mem_total - mem_available) * 100) / mem_total ))
         (( swap_total > 0 )) && swap_percent=$(( ((swap_total - swap_free) * 100) / swap_total ))
+        (( mem_percent >= 90 )) && mem_color="$red"
+        (( swap_percent >= 90 )) && swap_color="$red"
 
         printf "%20s %10s %11s %11s %11s %11s %11s\n" \
             "total" "used" "free" "shared" "buff/cache" "available" "used%"
@@ -242,22 +254,13 @@ get_mem_info() {
         while read -ra line; do
             case "${line[0]}" in
                 Mem:)
-                    if (( mem_percent >= 90 )); then
-                        printf "%s %15s %10s %11s %11s %11s %11s %b%11s%b\n" \
-                            "${line[@]}" "$red" "${mem_percent:-0}%" "$reset"
-                    else
-                        printf "%s %15s %10s %11s %11s %11s %11s %11s\n" \
-                            "${line[@]}" "${mem_percent:-0}%"
-                    fi
+                    printf "%s %15s %10s %11s %11s %11s %11s %b%11s%b\n" \
+                        "${line[@]}" "${mem_color:-$reset}" "${mem_percent:-0}%" "$reset"
                 ;;
 
                 Swap:)
-                    if (( swap_percent >= 90 )); then
-                        printf "%s %14s %10s %11s %b%47s%b\n" \
-                            "${line[@]}" "$red" "${swap_percent:-0}%" "$reset"
-                    else
-                        printf "%s %14s %10s %11s %47s\n" "${line[@]}" "${swap_percent:-0}%"
-                    fi
+                    printf "%s %14s %10s %11s %b%47s%b\n" \
+                       "${line[@]}" "${swap_color:-$reset}" "${swap_percent:-0}%" "$reset"
                 ;;
 
                 *) continue ;;
@@ -292,22 +295,23 @@ has_cmd () {
 
 
 health() {
-    local product_name sys_vendor
+    local product_name sys_vendor os
 
     product_name="/sys/devices/virtual/dmi/id/product_name"
     sys_vendor="/sys/devices/virtual/dmi/id/sys_vendor"
 
-    printf "%bHostname:%b %s\n" "$blue" "$reset" "$HOSTNAME"
+    printf "%bHostname:%b %s\n" "$blue" "$reset" "${HOSTNAME:-$(hostname)}"
 
-    [[ -f /etc/os-release ]] && printf "%bVersion:%b %s\n" \
-        "$blue" "$reset" "$(grep -Po "(?<=PRETTY_NAME=\").*[^\"]" /etc/os-release)"
+    if [[ -f /etc/os-release ]]; then
+        os="$( (. /etc/os-release; echo "$PRETTY_NAME") )"
+        [[ -n "$os" ]] && printf "%bVersion:%b %s\n" "$blue" "$reset" "$os"
+    fi
 
     [[ -f /proc/version ]] && printf "%bKernel:%b %s\n" \
         "$blue" "$reset" "$(awk '{print $3}' /proc/version)"
 
-    [[ -f "$product_name" && -f "$sys_vendor" ]] && {
-        printf "%bHost Info:%b %s, %s\n" \
-            "$blue" "$reset" "$(<"$sys_vendor")" "$(<"$product_name")"; }
+    [[ -f "$product_name" && -f "$sys_vendor" ]] && printf "%bHost Info:%b %s, %s\n" \
+        "$blue" "$reset" "$(<"$sys_vendor")" "$(<"$product_name")"
 
     printf "%bUptime:%b %s\n" "$blue" "$reset" "$(uptime)"
 
@@ -328,6 +332,7 @@ health() {
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
     printf "Display general system statistics and check for common errors.\n\n"
+    printf "  -d,   run in debug mode (enables 'set -x')\n"
     printf "  -e,   parse dmesg for alerts, errors, etc. (may require sudo)\n"
     printf "  -f,   report 10 largest files in specified directory tree\n"
     printf "  -h,   display this help and exit\n"
@@ -344,16 +349,20 @@ usage() {
 
 
 users_with_open_files() {
-    local line
-    declare -a uids
+    if has_cmd lsof; then
+        local line
+        declare -a uids
 
-    readarray -t uids < <(lsof -Fnu | awk '/^u/ { sub(/^u/, ""); if (!x[$0]++) print }')
+        readarray -t uids < \
+            <(lsof -Fnu | awk '/^u/ { sub(/^u/, ""); if (!x[$0]++) print }' 2> /dev/null)
 
-    printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" "NAME" "UID" "GID" "FULL NAME"
-    while IFS=':' read -ra line; do
-        printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" \
-            "${line[0]}" "${line[2]}" "${line[3]}" "${line[4]}"
-    done < <(getent passwd "${uids[@]}")
+        printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" "NAME" "UID" "GID" "FULL NAME"
+
+        while IFS=':' read -ra line; do
+            printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" \
+                "${line[0]}" "${line[2]}" "${line[3]}" "${line[4]}"
+        done < <(getent passwd "${uids[@]}")
+    fi
 }
 
 
@@ -364,25 +373,13 @@ whotf() {
 
     if [[ -n "${users[*]}" ]]; then
         printf "%bUsers Currently Logged in:%b\n" "$blue" "$reset"
-        printf "%s\n" "${users[@]}"
+        printf "  %s\n" "${users[@]}"
     fi
 }
 
 
 main() {
-    declare -g reset red green yellow blue
-
-    reset='\033[0m'
-    red='\033[0;31m'
-    green='\033[0;32m'
-    yellow='\033[0;33m'
-    blue='\033[0;34m'
-
-    if [[ "$#" -eq 0 ]]; then
-        health; exit 0
-    else
-        get_args "$@"
-    fi
+    get_args "$@"
 
     for arg in "${args_array[@]}"; do
         case "$arg" in
