@@ -19,7 +19,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-readonly version="Health version: 1.13.1 - May 28, 2026"
+readonly version="Health version: 1.13.2 - June 4, 2026"
 
 readonly reset='\033[0m'
 readonly red='\033[0;31m'
@@ -42,21 +42,18 @@ check_df() {
 
 
 check_mounts() {
-    local line mount
-    declare -a mounts mount_errors
+    local line mount mount_point
+    declare -a mount_errors
 
-    if [[ -f /etc/fstab ]]; then
+    if [[ -f /etc/fstab ]] && has_cmd findmnt; then
         while read -ra line || [[ -n "${line[*]}" ]]; do
-            [[ ! "${line[0]}" =~ ^# && "${line[1]}" =~ ^/ ]] && mounts+=("${line[1]}")
-        done < /etc/fstab
-    fi
+            mount="${line[0]}"
+            mount_point="${line[1]}"
 
-    if [[ -n "${mounts[*]}" ]]; then
-        for mount in "${mounts[@]}"; do
-            if ! findmnt "$mount" &> /dev/null; then
+            if [[ "${mount_point}" =~ ^/ ]] && ! findmnt "$mount" &> /dev/null; then
                 mount_errors+=("${yellow}${mount} is declared in fstab but not mounted${reset}")
             fi
-        done
+        done <  <(awk '!/^#/' /etc/fstab)
     fi
 
     if timeout 2 df &> /dev/null; then
@@ -95,6 +92,8 @@ dmesg_parse() {
 
 
 file_vulnerability() {
+    local path perm
+
     while read -r path perm; do
         if [[ "$perm" =~ [2367]$ ]]; then
             printf "%bWorld write-able:%b %s\n" "$blue" "$reset" "$path"
@@ -148,13 +147,15 @@ get_network_info() {
     declare -a dns_servers ntp_servers
     declare -A interfaces exports
 
-    while read -ra line; do
-        if [[ "${line[0]}" == default ]]; then
-            gateway="${line[2]}"
-        elif [[ "${line[6]}" == link ]]; then
-            interfaces["${line[2]}"]="${line[8]}"
-        fi
-    done < <(ip route 2> /dev/null)
+    if has_cmd ip; then
+        while read -ra line; do
+            if [[ "${line[0]}" == default ]]; then
+                gateway="${line[2]}"
+            elif [[ "${line[6]}" == link ]]; then
+                interfaces["${line[2]}"]="${line[8]}"
+            fi
+        done < <(ip route 2> /dev/null)
+    fi
 
     if [[ -n "${interfaces[*]}" ]]; then
         printf "%bInterface(s):%b\n" "$blue" "$reset"
@@ -165,10 +166,14 @@ get_network_info() {
 
     if [[ -n "$gateway" ]]; then
         printf "%bDefault gateway:%b\n" "$blue" "$reset"
-        if ping -W1 -c1 "$gateway" &> /dev/null; then
-            printf "  %s (%breachable%b)\n" "$gateway" "$green" "$reset"
+        if has_cmd ping; then
+            if ping -W1 -c1 "$gateway" &> /dev/null; then
+                printf "  %s (%breachable%b)\n" "$gateway" "$green" "$reset"
+            else
+                printf "  %s (%bunreachable%b)\n" "$gateway" "$yellow" "$reset"
+            fi
         else
-            printf "  %s (%bunreachable%b)\n" "$gateway" "$yellow" "$reset"
+            printf "  %s\n" "$gateway"
         fi
     fi
 
@@ -360,7 +365,7 @@ users_with_open_files() {
 
         while IFS=':' read -ra line; do
             printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" \
-                "${line[0]}" "${line[2]}" "${line[3]}" "${line[4]}"
+                "${line[0]}" "${line[@]:2:3}"
         done < <(getent passwd "${uids[@]}")
     fi
 }
