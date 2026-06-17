@@ -19,7 +19,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-readonly version="Health version: 1.13.2 - June 4, 2026"
+readonly version="Health version: 1.13.3 - June 16, 2026"
 
 readonly reset='\033[0m'
 readonly red='\033[0;31m'
@@ -32,40 +32,56 @@ check_df() {
     local line
 
     while read -r line; do
-        if [[ "$line" =~ 100% ]]; then
-            mount_errors+=("${red}${line}${reset}")
+        if [[ "$line" =~ ^Filesystem ]]; then
+            echo "${line}"
+        elif [[ "$line" =~ 100% ]]; then
+            echo "${red}${line}${reset}"
         elif [[ "$line" =~ 9[0-9]% ]]; then
-            mount_errors+=("${yellow}${line}${reset}")
+            echo "${yellow}${line}${reset}"
         fi
-    done < <(df -P "$1")
+    done < <(df -PT "$1")
 }
 
 
 check_mounts() {
     local line mount mount_point
-    declare -a mount_errors
+    declare -a mount_errors full_inodes full_fs
 
     if [[ -f /etc/fstab ]] && has_cmd findmnt; then
-        while read -ra line || [[ -n "${line[*]}" ]]; do
+        while read -ra line; do
             mount="${line[0]}"
             mount_point="${line[1]}"
 
             if [[ "${mount_point}" =~ ^/ ]] && ! findmnt "$mount" &> /dev/null; then
                 mount_errors+=("${yellow}${mount} is declared in fstab but not mounted${reset}")
             fi
-        done <  <(awk '!/^#/' /etc/fstab)
+        done < <(awk '!/^#/' /etc/fstab)
     fi
 
     if timeout 2 df &> /dev/null; then
-        check_df "-Ti"
-        check_df "-Th"
+        readarray -t full_inodes < <(check_df "-hi")
+        readarray -t full_fs < <(check_df "-h")
     else
         mount_errors+=("${yellow}Hung mount detected${reset}")
     fi
 
     if [[ -n "${mount_errors[*]}" ]]; then
-        printf "%bMounts & File Systems:%b\n" "$blue" "$reset"
+        printf "%bMounts/file systems errors:%b\n" "$blue" "$reset"
         for error in "${mount_errors[@]}"; do
+            printf "  %b\n" "$error"
+        done
+    fi
+
+    if [[ "${#full_inodes[@]}" -gt 1 ]]; then
+        printf "%bFull inodes:%b\n" "$blue" "$reset"
+        for error in "${full_inodes[@]}"; do
+            printf "  %b\n" "$error"
+        done
+    fi
+
+    if [[ "${#full_fs[@]}" -gt 1 ]]; then
+        printf "%bFull file systems:%b\n" "$blue" "$reset"
+        for error in "${full_fs[@]}"; do
             printf "  %b\n" "$error"
         done
     fi
@@ -217,7 +233,7 @@ get_network_info() {
     if has_cmd findmnt; then
         while read -r fstype src target; do
             exports["${fstype} - ${src}"]="$target"
-        done < <(findmnt -rn -t nfs,nfs4,cifs,smb3,fuse.sshfs,glusterfs,ceph,9p,lustre,fuse.davfs \
+        done < <(findmnt -rnt nfs,nfs4,cifs,smb3,fuse.sshfs,glusterfs,ceph,9p,lustre,fuse.davfs \
             -o FSTYPE,SOURCE,TARGET)
     fi
 
@@ -231,7 +247,7 @@ get_network_info() {
 
 
 get_mem_info() {
-    printf "%bMemory Usage:%b\n" "$blue" "$reset"
+    printf "%bMemory usage:%b\n" "$blue" "$reset"
 
     if [[ -f /proc/meminfo ]]; then
        local line \
@@ -253,18 +269,18 @@ get_mem_info() {
         (( mem_percent >= 90 )) && mem_color="$red"
         (( swap_percent >= 90 )) && swap_color="$red"
 
-        printf "%20s %10s %11s %11s %11s %11s %11s\n" \
+        printf "  %20s %10s %11s %11s %11s %11s %11s\n" \
             "total" "used" "free" "shared" "buff/cache" "available" "used%"
 
         while read -ra line; do
             case "${line[0]}" in
                 Mem:)
-                    printf "%s %15s %10s %11s %11s %11s %11s %b%11s%b\n" \
+                    printf "  %s %15s %10s %11s %11s %11s %11s %b%11s%b\n" \
                         "${line[@]}" "${mem_color:-$reset}" "${mem_percent:-0}%" "$reset"
                 ;;
 
                 Swap:)
-                    printf "%s %14s %10s %11s %b%47s%b\n" \
+                    printf "  %s %14s %10s %11s %b%47s%b\n" \
                        "${line[@]}" "${swap_color:-$reset}" "${swap_percent:-0}%" "$reset"
                 ;;
 
@@ -284,12 +300,12 @@ get_public_ip() {
         readarray -t public_ip_info < \
             <(curl --connect-timeout 5 -s ipinfo.io | jq -r '.ip, .hostname, .org' 2> /dev/null)
 
-        [[ -n "${public_ip_info[0]}" ]] && printf "%bPublic IP:%b %s\n" \
-            "$blue" "$reset" "${public_ip_info[0]}"
-        [[ -n "${public_ip_info[1]}" ]] && printf "%bHostname:%b %s\n" \
-            "$blue" "$reset" "${public_ip_info[1]}"
-        [[ -n "${public_ip_info[2]}" ]] && printf "%bISP:%b %s\n" \
-            "$blue" "$reset" "${public_ip_info[2]}"
+        [[ -n "${public_ip_info[0]}" ]] && \
+            printf "%bPublic IP:%b %s\n" "$blue" "$reset" "${public_ip_info[0]}"
+        [[ -n "${public_ip_info[1]}" ]] && \
+            printf "%bHostname:%b %s\n" "$blue" "$reset" "${public_ip_info[1]}"
+        [[ -n "${public_ip_info[2]}" ]] && \
+            printf "%bISP:%b %s\n" "$blue" "$reset" "${public_ip_info[2]}"
     fi
 }
 
@@ -308,15 +324,16 @@ health() {
     printf "%bHostname:%b %s\n" "$blue" "$reset" "${HOSTNAME:-$(hostname)}"
 
     if [[ -f /etc/os-release ]]; then
+        # shellcheck disable=1091
         os="$( (. /etc/os-release; echo "$PRETTY_NAME") )"
         [[ -n "$os" ]] && printf "%bVersion:%b %s\n" "$blue" "$reset" "$os"
     fi
 
-    [[ -f /proc/version ]] && printf "%bKernel:%b %s\n" \
-        "$blue" "$reset" "$(awk '{print $3}' /proc/version)"
+    [[ -f /proc/version ]] && \
+        printf "%bKernel:%b %s\n" "$blue" "$reset" "$(awk '{print $3}' /proc/version)"
 
-    [[ -f "$product_name" && -f "$sys_vendor" ]] && printf "%bHost Info:%b %s, %s\n" \
-        "$blue" "$reset" "$(<"$sys_vendor")" "$(<"$product_name")"
+    [[ -f "$product_name" && -f "$sys_vendor" ]] && \
+        printf "%bHost info:%b %s, %s\n" "$blue" "$reset" "$(<"$sys_vendor")" "$(<"$product_name")"
 
     printf "%bUptime:%b %s\n" "$blue" "$reset" "$(uptime)"
 
@@ -324,11 +341,11 @@ health() {
     whotf
     get_mem_info
 
-    printf "%bTop 5 Processes by Memory:%b\t%bTop 5 Processes by CPU:%b\n" "$blue" "$reset" \
-        "$blue" "$reset"
+    printf "%bTop 5 processes by memory:%b\t\t%bTop 5 processes by CPU:%b\n" \
+        "$blue" "$reset" "$blue" "$reset"
 
-    paste <(ps -eo %mem,comm,pid --sort=-%mem | head -n 6) \
-        <(ps -eo %cpu,comm,pid --sort=-pcpu | head -n 6)
+    paste <(ps -eo %mem,comm,pid --sort=-%mem | head -n 6 | sed 's/^/  /') \
+        <(ps -eo %cpu,comm,pid --sort=-pcpu | head -n 6 | sed 's/^/\t/')
 
     check_mounts
 }
@@ -377,7 +394,7 @@ whotf() {
     readarray -t users < <(who)
 
     if [[ -n "${users[*]}" ]]; then
-        printf "%bUsers Currently Logged in:%b\n" "$blue" "$reset"
+        printf "%bUsers currently logged in:%b\n" "$blue" "$reset"
         printf "  %s\n" "${users[@]}"
     fi
 }
