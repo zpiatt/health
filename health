@@ -19,7 +19,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-readonly version="Health version: 1.13.3 - June 16, 2026"
+readonly version="Health version: 1.13.3 - June 22, 2026"
 
 readonly reset='\033[0m'
 readonly red='\033[0;31m'
@@ -335,7 +335,7 @@ health() {
     [[ -f "$product_name" && -f "$sys_vendor" ]] && \
         printf "%bHost info:%b %s, %s\n" "$blue" "$reset" "$(<"$sys_vendor")" "$(<"$product_name")"
 
-    printf "%bUptime:%b %s\n" "$blue" "$reset" "$(uptime)"
+    printf "%bUptime:%b%s\n" "$blue" "$reset" "$(uptime)"
 
     get_network_info
     whotf

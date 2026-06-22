@@ -13,6 +13,7 @@ Health is a command-line system status check tool written in `bash 4.2+`. Design
   - Added `-d` for debug mode enabling `set -x`.
     - The `getopts` function processes arguments in order, so `-d` will most likely need to be supplied first.
   - Refactored `file_vulnerability` to only run `find` once on target directory.
+  - Refactored `check_mounts` to account for edge cases where inodes and disk usage is full.
 
 ### Compatibility:
 If you're using RHEL 7 or later and encounter issues or have suggestions for routine error checks, please feel free to reach out!
