@@ -19,7 +19,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-readonly version="Health version: 1.13.4 - July 2, 2026"
+readonly version="Health version: 1.13.6 - August 15, 2026"
 
 readonly reset='\033[0m'
 readonly red='\033[0;31m'
@@ -32,13 +32,11 @@ check_df() {
     local line
 
     while read -r line; do
-        if [[ "$line" =~ ^Filesystem ]]; then
-            echo "${line}"
-        elif [[ "$line" =~ 100% ]]; then
-            echo "${red}${line}${reset}"
-        elif [[ "$line" =~ 9[0-9]% ]]; then
-            echo "${yellow}${line}${reset}"
-        fi
+        case "$line" in
+            Filesystem*) echo "${line}" ;;
+            *100%*) echo "${red}${line}${reset}" ;;
+            *9[0-9]%*) echo "${yellow}${line}${reset}" ;;
+        esac
     done < <(df -PT "$1")
 }
 
@@ -341,8 +339,7 @@ health() {
     whotf
     get_mem_info
 
-    printf "%bTop 5 processes by memory:%b\t\t%bTop 5 processes by CPU:%b\n" \
-        "$blue" "$reset" "$blue" "$reset"
+    printf "%bTop 5 processes by memory:\t\tTop 5 processes by CPU:%b\n" "$blue" "$reset"
 
     paste <(ps -eo %mem,comm,pid --sort=-%mem | sed -n '1,6s/^/  /p' ) \
         <(ps -eo %cpu,comm,pid --sort=-pcpu | sed -n '1,6s/^/\t/p')
@@ -376,18 +373,16 @@ usage() {
 
 
 users_with_open_files() {
-    if has_cmd lsof; then
+    if has_cmd lsof && has_cmd getent; then
         local line
         declare -a uids
 
-        readarray -t uids < \
-            <(lsof -Fnu | awk '/^u/ { sub(/^u/, ""); if (!x[$0]++) print }' 2> /dev/null)
+        readarray -t uids < <(lsof -Fnu | awk '/^u/&&!x[$0]++{sub(/u/,"");print}' 2> /dev/null)
 
         printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" "NAME" "UID" "GID" "FULL NAME"
 
         while IFS=':' read -ra line; do
-            printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" \
-                "${line[0]}" "${line[@]:2:3}"
+            printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" "${line[0]}" "${line[@]:2:3}"
         done < <(getent passwd "${uids[@]}")
     fi
 }
