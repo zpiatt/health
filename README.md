@@ -7,14 +7,10 @@
 Health is a command-line system status check tool written in `bash 4.2+`. Designed for Red Hat Enterprise Linux (RHEL) environments, Health provides an easy way to display general system statistics, scrutinize file systems for common errors, and check for a variety of other typical system issues.
 
 ### Recently added:
-  - Added `needs-restarting -r` check to `health` function to check for kernel/core lib/service updates that likely require a restart.
-  - Overall reduction of dependency assumptions.
-    - Added `has_cmd` to validate binary dependencies and clean up error output.
-      - Checks for: `lsof`, `nmcli`, `curl`, `chronyc`, `findmnt`, `jq`, `dmesg`. & `needs-restarting`.
-  - Added `-d` for debug mode enabling `set -x`.
-    - The `getopts` function processes arguments in order, so `-d` will most likely need to be supplied first.
-  - Refactored `file_vulnerability` to only run `find` once on target directory.
-  - Refactored `check_mounts` to account for edge cases where inodes and disk usage is full.
+  - Added `-d` for displaying dead (uninterruptible sleep) process count (similar to `-z` for zombie processes).
+    - Replaced debug mode, since I was likely the only person using this.
+  - Added `systemd` failed unit check to `health` function.
+  - Refactored `chronyc` to clarify ntp status.
 
 ### Compatibility:
 If you're using RHEL 7 or later and encounter issues or have suggestions for routine error checks, please feel free to reach out!

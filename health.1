@@ -1,4 +1,4 @@
-.TH HEALTH "1" "JUNE 2026" "health version: 1.13.3" "User Commands"
+.TH HEALTH "1" "OCTOBER 2026" "health version: 1.14.0" "User Commands"
 .SH NAME
 Health \- Red Hat Enterprise Linux System Administration Quick Check Tool
 .SH SYNOPSIS
@@ -14,7 +14,7 @@ Specific checks can be performed with the options below. \fI\,NOTE:\/\fP some op
 .SH OPTIONS
 .TP
 \fB\-d\fR,
-run in debug mode; enables \fB\,set -x\fR
+display dead process count [uninterruptible sleep (usually I/O)]
 .TP
 \fB\-e\fR,
 parse dmesg for alerts, errors, etc.
@@ -47,7 +47,7 @@ display version number and exit
 show \fB\,passwd\fR entry for specified user
 .TP
 \fB\-z\fR,
-display zombie process count, if any
+display zombie process count [defunct (“zombie”) process, terminated but not reaped by its parent]
 .SH "RED HAT LIFE CYCLE SUPPORT STATUS"
 .TS
 tab(;);

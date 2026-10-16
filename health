@@ -19,7 +19,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-readonly version="Health version: 1.13.7 - October 15, 2026"
+readonly version="Health version: 1.14.0 - October 16, 2026"
 
 readonly reset='\033[0m'
 readonly red='\033[0;31m'
@@ -369,7 +369,7 @@ health() {
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
     printf "Display general system statistics and check for common errors.\n\n"
-    printf "  -d,   run in debug mode (enables 'set -x')\n"
+    printf "  -d,   display dead (uninterruptible sleep) process count\n"
     printf "  -e,   parse dmesg for alerts, errors, etc. (may require sudo)\n"
     printf "  -f,   report 10 largest files in specified directory tree\n"
     printf "  -h,   display this help and exit\n"
@@ -380,7 +380,7 @@ usage() {
     printf "  -s,   search for common file permission vulnerabilities\n"
     printf "  -v,   display version number and exit\n"
     printf "  -w,   show passwd entry for specified user\n"
-    printf "  -z,   display zombie process count, if any\n\n"
+    printf "  -z,   display zombie (defunct) process count\n\n"
     printf "Full documentation <https://github.com/zpiatt/health>\n"
 }
 
