@@ -353,7 +353,9 @@ health() {
 
         if [[ -n "${failed_units[*]}" ]]; then
             printf "%bFailed systemd units:%b\n" "$blue" "$reset"
-            printf "  %b%s%b\n" "$red" "${failed_units[*]}" "$reset"
+            for line in "${failed_units[@]}"; do
+                printf "  %b%s%b\n" "$red" "$line" "$reset"
+            done
         fi
     fi
 
