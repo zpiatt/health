@@ -156,7 +156,7 @@ get_args() {
 
 
 get_network_info() {
-    local line gateway interface dns nfs status
+    local line gateway interface dns leap status fstype src target nfs
     declare -a dns_servers ntp_status
     declare -A interfaces exports
 
@@ -207,14 +207,16 @@ get_network_info() {
     fi
 
     if has_cmd chronyc; then
-        while read -ra line; do
-            case "${line[0]}" in
-                Reference|System) ntp_status+=("${line[*]}") ;;
-                Leap)
-                    case "${line[3]}" in
-                        'Normal') leap_status="${green}${line[3]}${reset}" ;;
-                        'Insert second'|'Delete second') leap_status="${yellow}${line[3]}${reset}" ;;
-                        'Not synchronised') leap_status="${red}${line[3]}${reset}" ;;
+        while read -r line; do
+            case "$line" in
+                Reference*|System*) ntp_status+=("$line") ;;
+                Leap*)
+                    leap="${line##*: }"
+
+                    case "$leap" in
+                        'Normal') leap_status="${green}${leap}${reset}" ;;
+                        'Insert second'|'Delete second') leap_status="${yellow}${leap}${reset}" ;;
+                        'Not synchronised') leap_status="${red}${leap}${reset}" ;;
                     esac
                 ;;
             esac
