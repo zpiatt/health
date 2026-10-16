@@ -156,7 +156,7 @@ get_args() {
 
 
 get_network_info() {
-    local line gateway interface dns leap status fstype src target nfs
+    local line gateway interface dns leap leap_status status fstype src target nfs
     declare -a dns_servers ntp_status
     declare -A interfaces exports
 
