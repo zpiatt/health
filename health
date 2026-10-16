@@ -347,10 +347,13 @@ health() {
     check_mounts
 
     if has_cmd systemctl; then
+        declare -a failed_units
+
         readarray -t failed_units < <(systemctl --failed --no-legend 2> /dev/null)
+
         if [[ -n "${failed_units[*]}" ]]; then
-            printf "%bCore libraries & services:%b\n" "$blue" "$reset"
-            printf "%s\n" "${failed_units[@]}"
+            printf "%bFailed systemd units:%b\n" "$blue" "$reset"
+            printf "  %b%s%b\n" "$red" "${failed_units[*]}" "$reset"
         fi
     fi
 
