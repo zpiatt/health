@@ -19,7 +19,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
-readonly version="Health version: 1.13.6 - August 15, 2026"
+readonly version="Health version: 1.14.0 - October 16, 2026"
 
 readonly reset='\033[0m'
 readonly red='\033[0;31m'
@@ -124,8 +124,7 @@ get_args() {
 
     while getopts ':defhiopr:svw:z' option; do
         case "$option" in
-            d) set -x ;;
-            e|f|i|o|p|s|z) args_array+=("$option") ;;
+            d|e|f|i|o|p|s|z) args_array+=("$option") ;;
             h) usage; exit 0 ;;
             r) ssh -qt "$OPTARG" "bash -s" < "$0"; exit 0 ;;
             v) printf "%s\n" "$version"; exit 0 ;;
@@ -157,8 +156,8 @@ get_args() {
 
 
 get_network_info() {
-    local line gateway interface dns ntp nfs
-    declare -a dns_servers ntp_servers
+    local line gateway interface dns leap leap_status status fstype src target nfs
+    declare -a dns_servers ntp_status
     declare -A interfaces exports
 
     if has_cmd ip; then
@@ -208,23 +207,26 @@ get_network_info() {
     fi
 
     if has_cmd chronyc; then
-        while read -ra line; do
-            case "${line[0]}" in
-                ^\*) ntp_servers+=("${line[1]} (${green}current best${reset})") ;;
-                ^\+) ntp_servers+=("${line[1]} (${green}combined${reset})") ;;
-                ^-) ntp_servers+=("${line[1]} (${green}not combined${reset})") ;;
-                ^x) ntp_servers+=("${line[1]} (${yellow}may be in error${reset})") ;;
-                ^~) ntp_servers+=("${line[1]} (${red}too variable${reset})") ;;
-                ^\?) ntp_servers+=("${line[1]} (${red}unusable${reset})") ;;
-                *) continue ;;
+        while read -r line; do
+            case "$line" in
+                Reference*|System*) ntp_status+=("$line") ;;
+                Leap*)
+                    leap="${line##*: }"
+
+                    case "$leap" in
+                        'Normal') leap_status="${green}${leap}${reset}" ;;
+                        'Insert second'|'Delete second') leap_status="${yellow}${leap}${reset}" ;;
+                        'Not synchronised') leap_status="${red}${leap}${reset}" ;;
+                    esac
+                ;;
             esac
-        done < <(chronyc -n sources 2> /dev/null)
+        done < <(chronyc -n tracking 2> /dev/null)
     fi
 
-    if [[ -n "${ntp_servers[*]}" ]]; then
-        printf "%bNTP server(s):%b\n" "$blue" "$reset"
-        for ntp in "${ntp_servers[@]}"; do
-            printf "  %b\n" "$ntp"
+    if [[ -n "${ntp_status[*]}" ]]; then
+        printf "%bNTP status:%b %b\n" "$blue" "$reset" "$leap_status"
+        for status in "${ntp_status[@]}"; do
+            printf "  %b\n" "$status"
         done
     fi
 
@@ -333,7 +335,7 @@ health() {
     [[ -f "$product_name" && -f "$sys_vendor" ]] && \
         printf "%bHost info:%b %s, %s\n" "$blue" "$reset" "$(<"$sys_vendor")" "$(<"$product_name")"
 
-    printf "%bUptime:%b%s\n" "$blue" "$reset" "$(uptime)"
+    printf "%bUptime:%b%s\n" "$blue" "$reset" "$(uptime -p | sed 's/^up//')"
 
     get_network_info
     whotf
@@ -346,6 +348,19 @@ health() {
 
     check_mounts
 
+    if has_cmd systemctl; then
+        declare -a failed_units
+
+        readarray -t failed_units < <(systemctl --failed --no-legend 2> /dev/null)
+
+        if [[ -n "${failed_units[*]}" ]]; then
+            printf "%bFailed systemd units:%b\n" "$blue" "$reset"
+            for line in "${failed_units[@]}"; do
+                printf "  %b%s%b\n" "$red" "$line" "$reset"
+            done
+        fi
+    fi
+
     if has_cmd needs-restarting; then
         printf "%bCore libraries & services:%b\n" "$blue" "$reset"
         needs-restarting -r | sed 's/^/  /'
@@ -356,7 +371,7 @@ health() {
 usage() {
     printf "Usage: health [OPTION]... [DIRECTORY]...\n"
     printf "Display general system statistics and check for common errors.\n\n"
-    printf "  -d,   run in debug mode (enables 'set -x')\n"
+    printf "  -d,   display dead (uninterruptible sleep) process count\n"
     printf "  -e,   parse dmesg for alerts, errors, etc. (may require sudo)\n"
     printf "  -f,   report 10 largest files in specified directory tree\n"
     printf "  -h,   display this help and exit\n"
@@ -367,7 +382,7 @@ usage() {
     printf "  -s,   search for common file permission vulnerabilities\n"
     printf "  -v,   display version number and exit\n"
     printf "  -w,   show passwd entry for specified user\n"
-    printf "  -z,   display zombie process count, if any\n\n"
+    printf "  -z,   display zombie (defunct) process count\n\n"
     printf "Full documentation <https://github.com/zpiatt/health>\n"
 }
 
@@ -377,7 +392,7 @@ users_with_open_files() {
         local line
         declare -a uids
 
-        readarray -t uids < <(lsof -Fnu | awk '/^u/&&!x[$0]++{sub(/u/,"");print}' 2> /dev/null)
+        readarray -t uids < <(lsof -Fnu | awk '/^u/ && !x[$0]++ {sub(/^u/,""); print}' 2> /dev/null)
 
         printf "%-24.24s%-12.12s%-12.12s%-32.32s\n" "NAME" "UID" "GID" "FULL NAME"
 
@@ -405,6 +420,7 @@ main() {
 
     for arg in "${args_array[@]}"; do
         case "$arg" in
+            d) ps axo stat | awk 'BEGIN{i=0}/D/{i++;}END{print i}' ;;
             e) dmesg_parse ;;
             f) find "$dir" -xdev -type f -print0 | xargs -0 du -Sh | sort -rh | head ;;
             i) find "$dir" -xdev -printf '%h\n' | sort | uniq -c | sort -rn | head ;;
