@@ -352,6 +352,7 @@ health() {
             printf "%bCore libraries & services:%b\n" "$blue" "$reset"
             printf "%s\n" "${failed_units[@]}"
         fi
+    fi
 
     if has_cmd needs-restarting; then
         printf "%bCore libraries & services:%b\n" "$blue" "$reset"
